@@ -1,7 +1,7 @@
 package org.mvplugins.multiverse.core.command.queue;
 
 import co.aikar.commands.ACFUtil;
-import org.bukkit.scheduler.BukkitTask;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.mvplugins.multiverse.core.command.MVCommandIssuer;
@@ -28,7 +28,7 @@ public class CommandQueuePayload {
     private String otp;
     private Runnable action = () -> {};
     private Message prompt = Message.of(MVCorei18n.QUEUECOMMAND_DEFAULTPROMPT);
-    private BukkitTask expireTask;
+    private ScheduledTask expireTask;
 
     protected CommandQueuePayload(@NotNull MVCommandIssuer issuer) {
         this.otp = String.valueOf(ACFUtil.rand(100, 999));
@@ -104,12 +104,12 @@ public class CommandQueuePayload {
         return prompt;
     }
 
-    void expireTask(BukkitTask expireTask) {
+    void expireTask(ScheduledTask expireTask) {
         this.expireTask = expireTask;
     }
 
     @Nullable
-    BukkitTask expireTask() {
+    ScheduledTask expireTask() {
         return expireTask;
     }
 }

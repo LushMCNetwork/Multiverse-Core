@@ -8,6 +8,7 @@ import java.nio.file.Path;
 
 import com.dumptruckman.minecraft.util.Logging;
 import jakarta.inject.Inject;
+import org.bukkit.Bukkit;
 import org.jetbrains.annotations.NotNull;
 import org.jvnet.hk2.annotations.Service;
 
@@ -42,8 +43,8 @@ final class DumpsService {
 
         // Initialise and add info to the debug event
         MVDumpsDebugInfoEvent versionEvent = createAndCallDebugInfoEvent();
-        new DumpsLogPoster(plugin, issuer, servicesType, getLogs(), versionEvent)
-                .runTaskAsynchronously(plugin);
+        DumpsLogPoster logPoster = new DumpsLogPoster(plugin, issuer, servicesType, getLogs(), versionEvent);
+        Bukkit.getAsyncScheduler().runNow(plugin, task -> logPoster.run());
     }
 
     /**
