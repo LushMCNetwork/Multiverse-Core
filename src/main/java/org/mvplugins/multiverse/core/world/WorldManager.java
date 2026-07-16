@@ -158,10 +158,12 @@ public final class WorldManager {
      */
     @ApiStatus.Internal
     public Try<Void> initAllWorlds() {
-        return updateWorldsFromConfig().andThenTry(() -> {
+        // Touches world config and block state for every world, which on Folia may only happen on the
+        // global region thread. At plugin enable time we're not on it yet, so dispatch there.
+        return worldTickDeferrer.runOnGlobalRegionThread(() -> updateWorldsFromConfig().andThenTry(() -> {
             importExistingWorlds();
             autoLoadWorlds();
-        }).flatMap(ignore -> saveWorldsConfig());
+        }).flatMap(ignore -> saveWorldsConfig()));
     }
 
     /**
@@ -256,7 +258,8 @@ public final class WorldManager {
      * @return The result of the creation.
      */
     public Attempt<LoadedMultiverseWorld, CreateFailureReason> createWorld(CreateWorldOptions options) {
-        return parseCreateWorldOptionsKeyOrName(options).mapAttempt(this::doCreateWorld);
+        return worldTickDeferrer.runOnGlobalRegionThread(() ->
+                parseCreateWorldOptionsKeyOrName(options).mapAttempt(this::doCreateWorld));
     }
 
     private Attempt<KeyOrNameWithOptions<CreateWorldOptions>, CreateFailureReason> parseCreateWorldOptionsKeyOrName(
@@ -319,6 +322,10 @@ public final class WorldManager {
      * @return The result of the import.
      */
     public Attempt<LoadedMultiverseWorld, ImportFailureReason> importWorld(ImportWorldOptions options) {
+        return worldTickDeferrer.runOnGlobalRegionThread(() -> doImportWorldEntry(options));
+    }
+
+    private Attempt<LoadedMultiverseWorld, ImportFailureReason> doImportWorldEntry(ImportWorldOptions options) {
         return options.keyOrName()
                 .fold(WorldKeyOrName::parse, Attempt::success)
                 .transform(ImportFailureReason.INVALID_WORLDNAME)
@@ -492,7 +499,8 @@ public final class WorldManager {
      */
     @ApiStatus.AvailableSince("5.2")
     public Attempt<LoadedMultiverseWorld, LoadFailureReason> loadWorld(@NotNull LoadWorldOptions options) {
-        return validateWorldToLoad(options).mapAttempt(this::doLoadWorld);
+        return worldTickDeferrer.runOnGlobalRegionThread(() ->
+                validateWorldToLoad(options).mapAttempt(this::doLoadWorld));
     }
 
     private Attempt<LoadWorldOptions, LoadFailureReason> validateWorldToLoad(@NotNull LoadWorldOptions options) {
@@ -589,6 +597,10 @@ public final class WorldManager {
      * @return The result of the unload action.
      */
     public Attempt<MultiverseWorld, UnloadFailureReason> unloadWorld(@NotNull UnloadWorldOptions options) {
+        return worldTickDeferrer.runOnGlobalRegionThread(() -> doUnloadWorld(options));
+    }
+
+    private Attempt<MultiverseWorld, UnloadFailureReason> doUnloadWorld(@NotNull UnloadWorldOptions options) {
         LoadedMultiverseWorld world = options.world();
         if (unloadTracker.contains(world.getName())) {
             // This is to prevent recursive calls by WorldUnloadEvent
@@ -677,11 +689,13 @@ public final class WorldManager {
      */
     @ApiStatus.AvailableSince("5.2")
     public Attempt<String, RemoveFailureReason> removeWorld(@NotNull RemoveWorldOptions options) {
-        MultiverseWorld world = options.world();
-        return getLoadedWorld(world).fold(
-                () -> removeWorldFromConfig(world),
-                loadedWorld -> unloadBeforeRemoveWorld(loadedWorld, options)
-        );
+        return worldTickDeferrer.runOnGlobalRegionThread(() -> {
+            MultiverseWorld world = options.world();
+            return getLoadedWorld(world).fold(
+                    () -> removeWorldFromConfig(world),
+                    loadedWorld -> unloadBeforeRemoveWorld(loadedWorld, options)
+            );
+        });
     }
 
     private Attempt<String, RemoveFailureReason> unloadBeforeRemoveWorld(@NotNull LoadedMultiverseWorld loadedWorld,
@@ -724,9 +738,9 @@ public final class WorldManager {
      * @return The result of the delete action.
      */
     public Attempt<String, DeleteFailureReason> deleteWorld(@NotNull DeleteWorldOptions options) {
-        return getLoadedWorld(options.world()).fold(
+        return worldTickDeferrer.runOnGlobalRegionThread(() -> getLoadedWorld(options.world()).fold(
                 () -> loadThenDeleteWorld(options),
-                world -> doDeleteWorld(world, options));
+                world -> doDeleteWorld(world, options)));
     }
 
     private Attempt<String, DeleteFailureReason> loadThenDeleteWorld(@NotNull DeleteWorldOptions options) {
@@ -784,7 +798,7 @@ public final class WorldManager {
      * @return The result of the clone.
      */
     public Attempt<LoadedMultiverseWorld, CloneFailureReason> cloneWorld(@NotNull CloneWorldOptions options) {
-        return parseCloneWorldOptionsNewWorld(options)
+        return worldTickDeferrer.runOnGlobalRegionThread(() -> parseCloneWorldOptionsNewWorld(options)
                 .mapAttempt(this::cloneWorldCopyFolder)
                 .mapAttempt(keyOrNameWithOptions -> {
                     ImportWorldOptions importWorldOptions = ImportWorldOptions
@@ -802,7 +816,7 @@ public final class WorldManager {
                     }
                     saveWorldsConfig();
                     pluginManager.callEvent(new MVWorldClonedEvent(newWorld, options.fromWorld()));
-                });
+                }));
     }
 
     private Attempt<KeyOrNameWithOptions<CloneWorldOptions>, CloneFailureReason> parseCloneWorldOptionsNewWorld(
@@ -878,35 +892,37 @@ public final class WorldManager {
      * @return The result of the regeneration.
      */
     public Attempt<LoadedMultiverseWorld, RegenFailureReason> regenWorld(@NotNull RegenWorldOptions options) {
-        LoadedMultiverseWorld world = options.world();
-        DataTransfer<LoadedMultiverseWorld> dataTransfer = regenWorldTransferData(options, world);
-        boolean shouldKeepSpawnLocation = options.keepWorldConfig() && options.seed() == world.getSeed();
-        Location spawnLocation = world.getSpawnLocation();
-        CreateWorldOptions createWorldOptions = CreateWorldOptions.worldKeyOrName(world.worldConfig.getWorldKeyOrName())
-                .biome(world.getBiome())
-                .bonusChest(world.getBukkitWorld().map(WorldCompatibility::hasBonusChest).getOrElse(false))
-                .environment(world.getEnvironment())
-                .generateStructures(world.canGenerateStructures().getOrElse(true))
-                .generator(world.getGenerator())
-                .generatorSettings(world.getGeneratorSettings())
-                .seed(options.seed())
-                .useSpawnAdjust(!shouldKeepSpawnLocation && world.getAdjustSpawn())
-                .worldType(world.getWorldType().getOrElse(WorldType.NORMAL))
-                .doFolderCheck(options.keepFiles().isEmpty());
+        return worldTickDeferrer.runOnGlobalRegionThread(() -> {
+            LoadedMultiverseWorld world = options.world();
+            DataTransfer<LoadedMultiverseWorld> dataTransfer = regenWorldTransferData(options, world);
+            boolean shouldKeepSpawnLocation = options.keepWorldConfig() && options.seed() == world.getSeed();
+            Location spawnLocation = world.getSpawnLocation();
+            CreateWorldOptions createWorldOptions = CreateWorldOptions.worldKeyOrName(world.worldConfig.getWorldKeyOrName())
+                    .biome(world.getBiome())
+                    .bonusChest(world.getBukkitWorld().map(WorldCompatibility::hasBonusChest).getOrElse(false))
+                    .environment(world.getEnvironment())
+                    .generateStructures(world.canGenerateStructures().getOrElse(true))
+                    .generator(world.getGenerator())
+                    .generatorSettings(world.getGeneratorSettings())
+                    .seed(options.seed())
+                    .useSpawnAdjust(!shouldKeepSpawnLocation && world.getAdjustSpawn())
+                    .worldType(world.getWorldType().getOrElse(WorldType.NORMAL))
+                    .doFolderCheck(options.keepFiles().isEmpty());
 
-        return deleteWorld(DeleteWorldOptions.world(world).keepFiles(options.keepFiles()))
-                .transform(RegenFailureReason.DELETE_FAILED)
-                .mapAttempt(() -> createWorld(createWorldOptions).transform(RegenFailureReason.CREATE_FAILED))
-                .onSuccess(newWorld -> {
-                    dataTransfer.pasteAllTo(newWorld);
-                    if (shouldKeepSpawnLocation) {
-                        // Special case for spawn location to prevent unsafe location if world was regen using a
-                        // different seed.
-                        newWorld.setSpawnLocation(spawnLocation);
-                    }
-                    saveWorldsConfig();
-                    pluginManager.callEvent(new MVWorldRegeneratedEvent(newWorld));
-                });
+            return deleteWorld(DeleteWorldOptions.world(world).keepFiles(options.keepFiles()))
+                    .transform(RegenFailureReason.DELETE_FAILED)
+                    .mapAttempt(() -> createWorld(createWorldOptions).transform(RegenFailureReason.CREATE_FAILED))
+                    .onSuccess(newWorld -> {
+                        dataTransfer.pasteAllTo(newWorld);
+                        if (shouldKeepSpawnLocation) {
+                            // Special case for spawn location to prevent unsafe location if world was regen using a
+                            // different seed.
+                            newWorld.setSpawnLocation(spawnLocation);
+                        }
+                        saveWorldsConfig();
+                        pluginManager.callEvent(new MVWorldRegeneratedEvent(newWorld));
+                    });
+        });
     }
 
     private DataTransfer<LoadedMultiverseWorld> regenWorldTransferData(
