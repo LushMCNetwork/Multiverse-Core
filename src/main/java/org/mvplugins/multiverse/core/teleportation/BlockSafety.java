@@ -15,6 +15,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jvnet.hk2.annotations.Service;
 import org.mvplugins.multiverse.core.config.CoreConfig;
+import org.mvplugins.multiverse.core.utils.WorldTickDeferrer;
 
 /**
  * Used to check get or find block/location-related information.
@@ -24,11 +25,16 @@ public final class BlockSafety {
 
     private final CoreConfig config;
     private final LocationManipulation locationManipulation;
+    private final WorldTickDeferrer worldTickDeferrer;
 
     @Inject
-    BlockSafety(@NotNull CoreConfig config, @NotNull LocationManipulation locationManipulation) {
+    BlockSafety(
+            @NotNull CoreConfig config,
+            @NotNull LocationManipulation locationManipulation,
+            @NotNull WorldTickDeferrer worldTickDeferrer) {
         this.config = config;
         this.locationManipulation = locationManipulation;
+        this.worldTickDeferrer = worldTickDeferrer;
     }
 
     /**
@@ -38,7 +44,8 @@ public final class BlockSafety {
      * @return True if the block at that {@link Location} is above air.
      */
     public boolean isBlockAboveAir(Location location) {
-        return location.getBlock().getRelative(0, -1, 0).getType().isAir();
+        return worldTickDeferrer.runOnRegionThread(location,
+                () -> location.getBlock().getRelative(0, -1, 0).getType().isAir());
     }
 
     /**
@@ -48,7 +55,8 @@ public final class BlockSafety {
      * @return True if an entity would be on tracks at the specified {@link Location}.
      */
     public boolean isEntityOnTrack(Location location) {
-        return location.getBlock().getBlockData() instanceof Rail;
+        return worldTickDeferrer.runOnRegionThread(location,
+                () -> location.getBlock().getBlockData() instanceof Rail);
     }
 
     /**
@@ -58,16 +66,18 @@ public final class BlockSafety {
      * @return The location if found, null of all blocks are unsafe.
      */
     public Location getTopBlock(Location location) {
-        Location check = location.clone();
-        int maxHeight = Option.of(location.getWorld()).map(World::getMaxHeight).getOrElse(127);
-        check.setY(maxHeight);
-        while (check.getY() > 0) {
-            if (canSpawnAtLocationSafely(check)) {
-                return check;
+        return worldTickDeferrer.runOnRegionThread(location, () -> {
+            Location check = location.clone();
+            int maxHeight = Option.of(location.getWorld()).map(World::getMaxHeight).getOrElse(127);
+            check.setY(maxHeight);
+            while (check.getY() > 0) {
+                if (canSpawnAtLocationSafely(check)) {
+                    return check;
+                }
+                check.setY(check.getY() - 1);
             }
-            check.setY(check.getY() - 1);
-        }
-        return null;
+            return null;
+        });
     }
 
     /**
@@ -77,16 +87,18 @@ public final class BlockSafety {
      * @return The location if found, null of all blocks are unsafe.
      */
     public Location getBottomBlock(Location location) {
-        Location check = location.clone();
-        int minHeight = Option.of(location.getWorld()).map(World::getMinHeight).getOrElse(0);
-        check.setY(minHeight);
-        while (check.getY() < 127) { // SUPPRESS CHECKSTYLE: MagicNumberCheck
-            if (canSpawnAtLocationSafely(check)) {
-                return check;
+        return worldTickDeferrer.runOnRegionThread(location, () -> {
+            Location check = location.clone();
+            int minHeight = Option.of(location.getWorld()).map(World::getMinHeight).getOrElse(0);
+            check.setY(minHeight);
+            while (check.getY() < 127) { // SUPPRESS CHECKSTYLE: MagicNumberCheck
+                if (canSpawnAtLocationSafely(check)) {
+                    return check;
+                }
+                check.setY(check.getY() + 1);
             }
-            check.setY(check.getY() + 1);
-        }
-        return null;
+            return null;
+        });
     }
 
     /**
@@ -120,7 +132,7 @@ public final class BlockSafety {
      * @return Whether the player can spawn safely at the given {@link Location}
      */
     public boolean canSpawnAtLocationSafely(@NotNull Location location) {
-        return canSpawnAtBlockSafely(location.getBlock());
+        return worldTickDeferrer.runOnRegionThread(location, () -> canSpawnAtBlockSafely(location.getBlock()));
     }
 
     /**
@@ -131,30 +143,32 @@ public final class BlockSafety {
      * @return Whether the player can spawn safely at the given {@link Location}
      */
     public boolean canSpawnAtBlockSafely(@NotNull Block block) {
-        Logging.finest("Checking spawn safety for location: %s, %s, %s", block.getX(), block.getY(), block.getZ());
-        if (!block.getWorld().getWorldBorder().isInside(block.getLocation())) {
-            Logging.finest("Location is outside world border.");
-            return false;
-        }
-        if (isUnsafeSpawnBody(block)) {
-            // Player body will be stuck in solid
-            Logging.finest("Unsafe location for player's body: " + block);
-            return false;
-        }
-        Block airBlockForHead = block.getRelative(0, 1, 0);
-        if (isUnsafeSpawnBody(airBlockForHead)) {
-            // Player's head will be stuck in solid
-            Logging.finest("Unsafe location for player's head: " + airBlockForHead);
-            return false;
-        }
-        Block standingOnBlock = block.getRelative(0, -1, 0);
-        if (isUnsafeSpawnPlatform(standingOnBlock)) {
-            // Player will drop down
-            Logging.finest("Unsafe location due to invalid platform: " + standingOnBlock);
-            return false;
-        }
-        Logging.finest("Location is safe.");
-        return true;
+        return worldTickDeferrer.runOnRegionThread(block.getLocation(), () -> {
+            Logging.finest("Checking spawn safety for location: %s, %s, %s", block.getX(), block.getY(), block.getZ());
+            if (!block.getWorld().getWorldBorder().isInside(block.getLocation())) {
+                Logging.finest("Location is outside world border.");
+                return false;
+            }
+            if (isUnsafeSpawnBody(block)) {
+                // Player body will be stuck in solid
+                Logging.finest("Unsafe location for player's body: " + block);
+                return false;
+            }
+            Block airBlockForHead = block.getRelative(0, 1, 0);
+            if (isUnsafeSpawnBody(airBlockForHead)) {
+                // Player's head will be stuck in solid
+                Logging.finest("Unsafe location for player's head: " + airBlockForHead);
+                return false;
+            }
+            Block standingOnBlock = block.getRelative(0, -1, 0);
+            if (isUnsafeSpawnPlatform(standingOnBlock)) {
+                // Player will drop down
+                Logging.finest("Unsafe location due to invalid platform: " + standingOnBlock);
+                return false;
+            }
+            Logging.finest("Location is safe.");
+            return true;
+        });
     }
 
     /**
@@ -248,27 +262,29 @@ public final class BlockSafety {
      * @return The safe block if found, otherwise null.
      */
     public @Nullable Block findSafeSpawnBlock(@NotNull Block block, int horizontalRange, int verticalRange) {
-        Block searchResult = searchAroundXZ(block, horizontalRange);
-        if (searchResult != null) {
-            return searchResult;
-        }
-        int maxHeight = block.getWorld().getMaxHeight();
-        int minHeight = block.getWorld().getMinHeight();
-        for (int i = 1; i <= verticalRange; i++) {
-            if (block.getY() + i < maxHeight) {
-                searchResult = searchAroundXZ(block.getRelative(0, i, 0), horizontalRange);
-                if (searchResult != null) {
-                    return searchResult;
+        return worldTickDeferrer.runOnRegionThread(block.getLocation(), () -> {
+            Block searchResult = searchAroundXZ(block, horizontalRange);
+            if (searchResult != null) {
+                return searchResult;
+            }
+            int maxHeight = block.getWorld().getMaxHeight();
+            int minHeight = block.getWorld().getMinHeight();
+            for (int i = 1; i <= verticalRange; i++) {
+                if (block.getY() + i < maxHeight) {
+                    searchResult = searchAroundXZ(block.getRelative(0, i, 0), horizontalRange);
+                    if (searchResult != null) {
+                        return searchResult;
+                    }
+                }
+                if (block.getY() - i >= minHeight) {
+                    searchResult = searchAroundXZ(block.getRelative(0, -i, 0), horizontalRange);
+                    if (searchResult != null) {
+                        return searchResult;
+                    }
                 }
             }
-            if (block.getY() - i >= minHeight) {
-                searchResult = searchAroundXZ(block.getRelative(0, -i, 0), horizontalRange);
-                if (searchResult != null) {
-                    return searchResult;
-                }
-            }
-        }
-        return null;
+            return null;
+        });
     }
 
     /**
@@ -350,24 +366,26 @@ public final class BlockSafety {
         if (location.getWorld() == null) {
             return null;
         }
-        Block b = location.getWorld().getBlockAt(location);
-        Location foundLocation = null;
-        if (b.getType() == Material.NETHER_PORTAL) {
-            return location;
-        }
-        if (b.getRelative(BlockFace.NORTH).getType() == Material.NETHER_PORTAL) {
-            foundLocation = getCloserBlock(location, b.getRelative(BlockFace.NORTH).getLocation(), foundLocation);
-        }
-        if (b.getRelative(BlockFace.SOUTH).getType() == Material.NETHER_PORTAL) {
-            foundLocation = getCloserBlock(location, b.getRelative(BlockFace.SOUTH).getLocation(), foundLocation);
-        }
-        if (b.getRelative(BlockFace.EAST).getType() == Material.NETHER_PORTAL) {
-            foundLocation = getCloserBlock(location, b.getRelative(BlockFace.EAST).getLocation(), foundLocation);
-        }
-        if (b.getRelative(BlockFace.WEST).getType() == Material.NETHER_PORTAL) {
-            foundLocation = getCloserBlock(location, b.getRelative(BlockFace.WEST).getLocation(), foundLocation);
-        }
-        return foundLocation;
+        return worldTickDeferrer.runOnRegionThread(location, () -> {
+            Block b = location.getWorld().getBlockAt(location);
+            Location foundLocation = null;
+            if (b.getType() == Material.NETHER_PORTAL) {
+                return location;
+            }
+            if (b.getRelative(BlockFace.NORTH).getType() == Material.NETHER_PORTAL) {
+                foundLocation = getCloserBlock(location, b.getRelative(BlockFace.NORTH).getLocation(), foundLocation);
+            }
+            if (b.getRelative(BlockFace.SOUTH).getType() == Material.NETHER_PORTAL) {
+                foundLocation = getCloserBlock(location, b.getRelative(BlockFace.SOUTH).getLocation(), foundLocation);
+            }
+            if (b.getRelative(BlockFace.EAST).getType() == Material.NETHER_PORTAL) {
+                foundLocation = getCloserBlock(location, b.getRelative(BlockFace.EAST).getLocation(), foundLocation);
+            }
+            if (b.getRelative(BlockFace.WEST).getType() == Material.NETHER_PORTAL) {
+                foundLocation = getCloserBlock(location, b.getRelative(BlockFace.WEST).getLocation(), foundLocation);
+            }
+            return foundLocation;
+        });
     }
 
     private Location getCloserBlock(Location source, Location blockA, Location blockB) {
