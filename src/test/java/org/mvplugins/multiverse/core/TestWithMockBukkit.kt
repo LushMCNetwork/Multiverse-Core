@@ -23,6 +23,9 @@ abstract class TestWithMockBukkit {
         TestingMode.enable()
         server = MockBukkit.mock(MVServerMock())
         multiverseCore = MockBukkit.load(MultiverseCore::class.java)
+        // World init is dispatched via the global region scheduler on enable (required for Folia); pump the
+        // mock scheduler once so it actually runs before tests proceed.
+        server.scheduler.performOneTick()
         Logging.setDebugLevel(3)
         serviceLocator = multiverseCore.serviceLocator
         assertNotNull(server.commandMap)

@@ -101,23 +101,27 @@ public class MultiverseCore extends MultiverseModule {
         // Build it here so our logger can work, and failure messages will be logged
         SpawnCategoryMapper.buildSpawnCategoryMap();
 
-        // Initialize the worlds
-        worldManagerProvider.get().initAllWorlds().andThenTry(() -> {
-            loadEconomist(); // Setup economy here so vault is loaded
-            loadAnchors();
-            registerDynamicListeners(CoreListener.class);
-            setUpLocales();
-            registerCommands(CoreCommand.class);
-            registerDestinations();
-            setupMetrics();
-            loadPlaceholderApiIntegration();
-            loadApiService();
-            saveAllConfigs();
-            logEnableMessage();
-        }).onFailure(e -> {
-            Logging.severe("Failed to multiverse core! Disabling...");
-            e.printStackTrace();
-            getServer().getPluginManager().disablePlugin(this);
+        // Initialize the worlds. This must be dispatched, not run inline: on Folia, onEnable() runs before the
+        // server's tick loop starts, so nothing is draining the global region scheduler's queue yet - blocking
+        // here to wait for it would deadlock the very thread that needs to start ticking to drain it.
+        getServer().getGlobalRegionScheduler().run(this, task -> {
+            worldManagerProvider.get().initAllWorlds().andThenTry(() -> {
+                loadEconomist(); // Setup economy here so vault is loaded
+                loadAnchors();
+                registerDynamicListeners(CoreListener.class);
+                setUpLocales();
+                registerCommands(CoreCommand.class);
+                registerDestinations();
+                setupMetrics();
+                loadPlaceholderApiIntegration();
+                loadApiService();
+                saveAllConfigs();
+                logEnableMessage();
+            }).onFailure(e -> {
+                Logging.severe("Failed to multiverse core! Disabling...");
+                e.printStackTrace();
+                getServer().getPluginManager().disablePlugin(this);
+            });
         });
     }
 
