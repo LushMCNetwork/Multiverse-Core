@@ -1,70 +1,88 @@
 package org.mvplugins.multiverse.core.utils;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
+
 import com.dumptruckman.minecraft.util.Logging;
-import io.vavr.control.Option;
 import jakarta.inject.Inject;
-import org.bukkit.Server;
-import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.Bukkit;
 import org.jetbrains.annotations.NotNull;
 import org.jvnet.hk2.annotations.Service;
 import org.mvplugins.multiverse.core.MultiverseCore;
 
-import java.lang.reflect.Field;
-
 /**
- * Defers action that cannot be done during world tick.
+ * Bridges world-mutating Bukkit calls (create/unload world) onto the global region thread.
+ * <p>
+ * On Folia, {@code Bukkit.createWorld}/{@code Bukkit.unloadWorld} may only be called from the global region
+ * thread. On regular Paper/Spigot, the "global region thread" is just the main thread, so this has no
+ * practical effect beyond what already worked.
  */
 @Service
 public final class WorldTickDeferrer {
 
+    private static final long BLOCKING_DISPATCH_TIMEOUT_SECONDS = 30;
+
     private final MultiverseCore plugin;
 
-    private final Option<Object> console;
-    private final Option<Field> isIteratingOverLevelsMethod;
-
     @Inject
-    WorldTickDeferrer(@NotNull MultiverseCore plugin, @NotNull Server server) {
+    WorldTickDeferrer(@NotNull MultiverseCore plugin) {
         this.plugin = plugin;
-        this.console = ReflectHelper.tryGetMethod(server.getClass(), "getServer")
-                .onFailure(throwable -> Logging.fine("Unable to find getServer method."))
-                .flatMap(getServerMethod -> ReflectHelper.tryInvokeMethod(server, getServerMethod))
-                .onFailure(throwable -> Logging.fine("Unable to find console."))
-                .toOption();
-        this.isIteratingOverLevelsMethod = console.toTry()
-                .map(Object::getClass)
-                .flatMap(consoleClazz -> ReflectHelper.tryGetField(consoleClazz, "isIteratingOverLevels"))
-                .onFailure(throwable -> Logging.fine("Unable to find isIteratingOverLevels field."))
-                .toOption();
     }
 
     /**
-     * Defer action that cannot be done during world tick if needed.
-     * 
-     * @param action The action to defer
+     * Runs the action on the global region thread, immediately if already on it, otherwise dispatches it there.
+     * Does not wait for the action to complete.
+     *
+     * @param action The action to run.
      */
     public void deferWorldTick(Runnable action) {
-        if (!isIteratingOverLevels()) {
+        if (Bukkit.isGlobalTickThread()) {
             action.run();
             return;
         }
-        Logging.fine("Deferring world tick...");
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                action.run();
-            }
-        }.runTaskLater(this.plugin, 1L);
+        Logging.fine("Dispatching action to global region thread...");
+        Bukkit.getGlobalRegionScheduler().execute(plugin, action);
     }
 
     /**
-     * Check if the server is currently doing a world tick.
+     * Runs the action on the global region thread and blocks the calling thread until it completes, returning
+     * its result. If already on the global region thread, runs immediately with no dispatch.
      *
-     * @return True if the server is currently doing a world tick
+     * @param action The action to run.
+     * @param <T> The return type of the action.
+     * @return The result of the action.
      */
-    private boolean isIteratingOverLevels() {
-        return isIteratingOverLevelsMethod
-                .flatMap(field -> console
-                        .flatMap(c -> ReflectHelper.tryGetFieldValue(c, field, Boolean.class).toOption()))
-                .getOrElse(false);
+    public <T> T runOnGlobalRegionThread(Supplier<T> action) {
+        if (Bukkit.isGlobalTickThread()) {
+            return action.get();
+        }
+
+        Logging.fine("Blocking on dispatch to global region thread...");
+        CompletableFuture<T> future = new CompletableFuture<>();
+        Bukkit.getGlobalRegionScheduler().execute(plugin, () -> {
+            try {
+                future.complete(action.get());
+            } catch (Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        });
+
+        try {
+            return future.get(BLOCKING_DISPATCH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while waiting for global region thread", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new RuntimeException(cause);
+        } catch (TimeoutException e) {
+            throw new RuntimeException("Timed out waiting for global region thread", e);
+        }
     }
 }

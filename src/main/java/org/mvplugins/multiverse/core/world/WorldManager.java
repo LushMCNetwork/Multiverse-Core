@@ -48,6 +48,7 @@ import org.mvplugins.multiverse.core.permissions.CorePermissions;
 import org.mvplugins.multiverse.core.teleportation.BlockSafety;
 import org.mvplugins.multiverse.core.teleportation.LocationManipulation;
 import org.mvplugins.multiverse.core.utils.ServerProperties;
+import org.mvplugins.multiverse.core.utils.WorldTickDeferrer;
 import org.mvplugins.multiverse.core.utils.compatibility.BukkitCompatibility;
 import org.mvplugins.multiverse.core.utils.compatibility.WorldCompatibility;
 import org.mvplugins.multiverse.core.utils.compatibility.WorldCreatorCompatibility;
@@ -111,6 +112,7 @@ public final class WorldManager {
     private final CoreConfig config;
     private final EntityPurger entityPurger;
     private final Provider<PotentialWorldFinder> potentialWorldFinder;
+    private final WorldTickDeferrer worldTickDeferrer;
 
     @Inject
     WorldManager(
@@ -127,7 +129,8 @@ public final class WorldManager {
             @NotNull ServerProperties serverProperties,
             @NotNull CoreConfig config,
             @NotNull EntityPurger entityPurger,
-            @NotNull Provider<PotentialWorldFinder> potentialWorldFinder) {
+            @NotNull Provider<PotentialWorldFinder> potentialWorldFinder,
+            @NotNull WorldTickDeferrer worldTickDeferrer) {
         this.worldStore = worldStore;
         this.worldsConfigManager = worldsConfigManager;
         this.worldNameChecker = worldNameChecker;
@@ -142,6 +145,7 @@ public final class WorldManager {
         this.config = config;
         this.entityPurger = entityPurger;
         this.potentialWorldFinder = potentialWorldFinder;
+        this.worldTickDeferrer = worldTickDeferrer;
 
         this.unloadTracker = new ArrayList<>();
         this.loadTracker = new ArrayList<>();
@@ -975,7 +979,7 @@ public final class WorldManager {
     private Attempt<World, WorldCreatorFailureReason> createBukkitWorld(WorldCreator worldCreator) {
         return Try.of(() -> {
             this.loadTracker.add(worldCreator.name());
-            World world = worldCreator.createWorld();
+            World world = worldTickDeferrer.runOnGlobalRegionThread(worldCreator::createWorld);
             if (world == null) {
                 throw new MultiverseWorldException(Message.of(MVCorei18n.EXCEPTION_MULTIVERSEWORLD_CREATENULL));
             }
@@ -1004,7 +1008,7 @@ public final class WorldManager {
                 return;
             }
             unloadTracker.add(world.getName());
-            if (!Bukkit.unloadWorld(world, save)) {
+            if (!worldTickDeferrer.runOnGlobalRegionThread(() -> Bukkit.unloadWorld(world, save))) {
                 throwUnloadException(world);
             }
             Logging.fine("Bukkit unloaded world: " + world.getName());
