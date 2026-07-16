@@ -5,7 +5,6 @@ import com.dumptruckman.minecraft.util.Logging;
 import io.papermc.lib.PaperLib;
 import io.vavr.control.Either;
 import io.vavr.control.Try;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Entity;
@@ -244,10 +243,10 @@ public final class AsyncSafetyTeleporterAction {
         return AsyncAttemptsAggregate.allOfAggregate(toTeleport.stream()
                         .map(passenger -> doAsyncTeleport(passenger, location))
                         .toList())
-                .onSuccess(() -> Bukkit.getScheduler().runTask(multiverseCore, () -> {
+                .onSuccess(() -> teleportee.getScheduler().run(multiverseCore, task -> {
                     passengers.forEach(teleportee::addPassenger);
                     Logging.finer("Mounted %d passengers to %s", passengers.size(), teleportee.getName());
-                }));
+                }, null));
     }
 
     private AsyncAttempt<Void, TeleportFailureReason> doSingleTeleport(
@@ -272,6 +271,7 @@ public final class AsyncSafetyTeleporterAction {
     private void applyPostTeleportVelocity(@NotNull Entity teleportee) {
         locationOrDestination.peek(destination ->
                 destination.getVelocity(teleportee).peek(velocity ->
-                        Bukkit.getScheduler().runTaskLater(multiverseCore, () -> teleportee.setVelocity(velocity), 1L)));
+                        teleportee.getScheduler().runDelayed(
+                                multiverseCore, task -> teleportee.setVelocity(velocity), null, 1L)));
     }
 }

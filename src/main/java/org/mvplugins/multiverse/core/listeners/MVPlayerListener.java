@@ -432,9 +432,10 @@ final class MVPlayerListener implements CoreListener {
             doGameModeAndFlightEnforcement(player, world);
             return;
         }
-        server.getScheduler().runTaskLater(
+        player.getScheduler().runDelayed(
                 this.plugin,
-                () -> doGameModeAndFlightEnforcement(player, world),
+                task -> doGameModeAndFlightEnforcement(player, world),
+                null,
                 config.getGamemodeAndFlightEnforceDelay()
         );
     }
