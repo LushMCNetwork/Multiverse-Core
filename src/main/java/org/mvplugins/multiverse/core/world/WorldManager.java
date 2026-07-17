@@ -302,7 +302,8 @@ public final class WorldManager {
                         generatorString,
                         options.biome(),
                         options.generatorSettings(),
-                        options.useSpawnAdjust()))
+                        options.useSpawnAdjust(),
+                        true))
                 .peek(loadedWorld -> postCreateWorld(loadedWorld, options));
     }
 
@@ -379,7 +380,8 @@ public final class WorldManager {
                         generatorString,
                         options.biome(),
                         options.generatorSettings(),
-                        options.useSpawnAdjust()))
+                        options.useSpawnAdjust(),
+                        true))
                 .peek(loadedWorld -> pluginManager.callEvent(new MVWorldImportedEvent(loadedWorld)));
     }
 
@@ -396,12 +398,16 @@ public final class WorldManager {
 
         //todo: check for key mismatch?
 
+        // verifySpawnSafety=false: this world was already loaded by Bukkit (e.g. one of the default worlds at
+        // server boot) before it has any owning Folia region, so there is nothing to dispatch the block-safety
+        // check to yet. The raw vanilla spawn location is used as-is.
         LoadedMultiverseWorld loadedWorld = newLoadedMultiverseWorld(
                 bukkitWorld,
                 generatorProvider.parseGeneratorString(keyOrName.usableName(), options.generator()),
                 options.biome(),
                 options.generatorSettings(),
-                options.useSpawnAdjust());
+                options.useSpawnAdjust(),
+                false);
         pluginManager.callEvent(new MVWorldImportedEvent(loadedWorld));
         return Attempt.success(loadedWorld);
     }
@@ -416,16 +422,19 @@ public final class WorldManager {
     /**
      * Creates a new loaded multiverseWorld from a bukkit world.
      *
-     * @param world         The bukkit world to create a multiverse world from.
-     * @param generator     The generator string.
-     * @param adjustSpawn   Whether to adjust spawn.
+     * @param world             The bukkit world to create a multiverse world from.
+     * @param generator         The generator string.
+     * @param adjustSpawn       Whether to adjust spawn.
+     * @param verifySpawnSafety Whether to verify/adjust the spawn location against block safety. Must be false
+     *                          for a world that has no owning Folia region yet.
      */
     private LoadedMultiverseWorld newLoadedMultiverseWorld(
             @NotNull World world,
             @Nullable String generator,
             @Nullable String biome,
             @Nullable String generatorSettings,
-            boolean adjustSpawn) {
+            boolean adjustSpawn,
+            boolean verifySpawnSafety) {
         WorldConfig worldConfig = worldsConfigManager.addWorldConfig(world.getKey());
 
         // Properties from multiverse input
@@ -449,7 +458,8 @@ public final class WorldManager {
                 config,
                 blockSafety,
                 locationManipulation,
-                entityPurger
+                entityPurger,
+                verifySpawnSafety
         );
         worldStore.putLoadedWorld(loadedWorld);
         saveWorldsConfig();

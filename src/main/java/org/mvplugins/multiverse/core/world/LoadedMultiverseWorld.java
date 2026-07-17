@@ -39,6 +39,24 @@ public final class LoadedMultiverseWorld extends MultiverseWorld {
             @NotNull LocationManipulation locationManipulation,
             @NotNull EntityPurger entityPurger
     ) {
+        this(world, worldConfig, config, blockSafety, locationManipulation, entityPurger, true);
+    }
+
+    /**
+     * @param verifySpawnSafety Whether to verify/adjust the spawn location against block safety. Must be false
+     *                          when constructed for a world that has no owning Folia region yet (e.g. importing
+     *                          a world Bukkit already loaded before this plugin's onEnable), since there would be
+     *                          nothing to dispatch the block-safety check to.
+     */
+    LoadedMultiverseWorld(
+            @NotNull World world,
+            @NotNull WorldConfig worldConfig,
+            @NotNull CoreConfig config,
+            @NotNull BlockSafety blockSafety,
+            @NotNull LocationManipulation locationManipulation,
+            @NotNull EntityPurger entityPurger,
+            boolean verifySpawnSafety
+    ) {
         super(worldConfig, config);
         this.worldUid = world.getUID();
         this.blockSafety = blockSafety;
@@ -46,7 +64,7 @@ public final class LoadedMultiverseWorld extends MultiverseWorld {
         this.entityPurger = entityPurger;
 
         setupWorldConfig(world);
-        setupSpawnLocation(world);
+        setupSpawnLocation(world, verifySpawnSafety);
         purgeEntitiesOnLoad();
     }
 
@@ -57,17 +75,17 @@ public final class LoadedMultiverseWorld extends MultiverseWorld {
         worldConfig.setSeed(world.getSeed());
     }
 
-    private void setupSpawnLocation(World world) {
+    private void setupSpawnLocation(World world, boolean verifySpawnSafety) {
         Location spawnLocation = worldConfig.getSpawnLocation();
         if (spawnLocation == null || spawnLocation instanceof NullSpawnLocation) {
-            SpawnLocation newLocation = new SpawnLocation(readSpawnFromWorld(world));
+            Location rawSpawn = world.getSpawnLocation();
+            SpawnLocation newLocation = new SpawnLocation(
+                    verifySpawnSafety ? readSpawnFromWorld(world, rawSpawn) : rawSpawn);
             worldConfig.setSpawnLocation(newLocation);
         }
     }
 
-    private Location readSpawnFromWorld(World world) {
-        Location location = world.getSpawnLocation();
-
+    private Location readSpawnFromWorld(World world, Location location) {
         // Verify that location was safe
         if (blockSafety.canSpawnAtLocationSafely(location)) {
             return location;
