@@ -118,6 +118,28 @@ public final class WorldTickDeferrer {
         return blockOn(future -> Bukkit.getRegionScheduler().execute(plugin, location, () -> complete(future, action)));
     }
 
+    /**
+     * Runs the action on the region thread that owns the given location without blocking the calling thread,
+     * immediately if already on that region's thread, otherwise dispatched there. Safe to call from any thread,
+     * including a different region's own tick thread - use this instead of {@link #runOnRegionThread} for
+     * anything reachable from a command or event handler, since the target location may belong to a region
+     * different from (or not yet existing relative to) the calling thread's own region.
+     *
+     * @param location The location whose owning region the action must run on.
+     * @param action   The action to run.
+     * @param <T> The return type of the action.
+     * @return A future completed with the result of the action once it has run.
+     */
+    public <T> CompletableFuture<T> runOnRegionThreadAsync(Location location, Supplier<T> action) {
+        if (Bukkit.isOwnedByCurrentRegion(location)) {
+            return completedOrFailed(action);
+        }
+        Logging.fine("Dispatching to region thread for %s...", location);
+        CompletableFuture<T> future = new CompletableFuture<>();
+        Bukkit.getRegionScheduler().execute(plugin, location, () -> complete(future, action));
+        return future;
+    }
+
     private <T> void complete(CompletableFuture<T> future, Supplier<T> action) {
         try {
             future.complete(action.get());

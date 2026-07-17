@@ -6,6 +6,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import io.vavr.control.Either;
+import org.jetbrains.annotations.ApiStatus;
 import org.mvplugins.multiverse.core.locale.message.MessageReplacement;
 
 /**
@@ -50,6 +51,23 @@ public final class AsyncAttempt<T, F extends FailureReason> {
                 ? exceptionHandler.apply(exception)
                 : Attempt.success(result);
         return of(future, completionHandler);
+    }
+
+    /**
+     * Wraps a {@link CompletableFuture} that already resolves to an {@link Attempt} - use this when the
+     * completion logic doesn't fit {@link #of(CompletableFuture, BiFunction)}'s same-type constraint (e.g. the
+     * future's raw value type differs from the attempt's success type).
+     *
+     * @param future The future to wrap.
+     * @param <T> The type of the successful result.
+     * @param <F> The type representing failure reasons.
+     * @return An instance of {@link AsyncAttempt}.
+     *
+     * @since 5.7
+     */
+    @ApiStatus.AvailableSince("5.7")
+    public static <T, F extends FailureReason> AsyncAttempt<T, F> ofFuture(CompletableFuture<Attempt<T, F>> future) {
+        return new AsyncAttempt<>(future);
     }
 
     /**

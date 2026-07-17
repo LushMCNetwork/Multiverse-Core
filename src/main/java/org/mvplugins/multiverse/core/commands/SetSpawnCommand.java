@@ -12,6 +12,8 @@ import org.bukkit.Location;
 import org.jetbrains.annotations.NotNull;
 import org.jvnet.hk2.annotations.Service;
 
+import java.util.concurrent.CompletableFuture;
+
 import org.mvplugins.multiverse.core.command.LegacyAliasCommand;
 import org.mvplugins.multiverse.core.command.MVCommandIssuer;
 import org.mvplugins.multiverse.core.command.context.PlayerLocation;
@@ -56,22 +58,29 @@ class SetSpawnCommand extends CoreCommand {
         ParsedCommandFlags parsedFlags = flags.parse(flagArray);
         Location location = playerLocation.value();
 
-        if (!parsedFlags.hasFlag(flags.unsafe) && !blockSafety.canSpawnAtLocationSafely(location)) {
-            issuer.sendMessage(MVCorei18n.SETSPAWN_UNSAFE);
-            return;
-        }
+        // The location may be in a different world/region than the one this command is currently running on,
+        // so the safety check must not be blocked on here.
+        CompletableFuture<Boolean> safetyCheck = parsedFlags.hasFlag(flags.unsafe)
+                ? CompletableFuture.completedFuture(true)
+                : blockSafety.canSpawnAtLocationSafely(location);
+        safetyCheck.thenAccept(isSafe -> {
+            if (!isSafe) {
+                issuer.sendMessage(MVCorei18n.SETSPAWN_UNSAFE);
+                return;
+            }
 
-        worldManager.getLoadedWorld(location.getWorld())
-                .peek(mvWorld -> mvWorld.setSpawnLocation(location)
-                        .andThenTry(worldManager::saveWorldsConfig)
-                        .onSuccess(ignore -> issuer.sendMessage(MVCorei18n.SETSPAWN_SUCCESS,
-                                Replace.WORLD.with(mvWorld.getName()),
-                                Replace.LOCATION.with(prettyLocation(location))))
-                        .onFailure(e -> issuer.sendMessage(MVCorei18n.SETSPAWN_FAILED,
-                                Replace.WORLD.with(mvWorld.getName()),
-                                Replace.ERROR.with(e))))
-                .onEmpty(() -> issuer.sendMessage(MVCorei18n.SETSPAWN_NOTMVWORLD,
-                        Replace.WORLD.with(location.getWorld().getName())));
+            worldManager.getLoadedWorld(location.getWorld())
+                    .peek(mvWorld -> mvWorld.setSpawnLocation(location)
+                            .andThenTry(worldManager::saveWorldsConfig)
+                            .onSuccess(ignore -> issuer.sendMessage(MVCorei18n.SETSPAWN_SUCCESS,
+                                    Replace.WORLD.with(mvWorld.getName()),
+                                    Replace.LOCATION.with(prettyLocation(location))))
+                            .onFailure(e -> issuer.sendMessage(MVCorei18n.SETSPAWN_FAILED,
+                                    Replace.WORLD.with(mvWorld.getName()),
+                                    Replace.ERROR.with(e))))
+                    .onEmpty(() -> issuer.sendMessage(MVCorei18n.SETSPAWN_NOTMVWORLD,
+                            Replace.WORLD.with(location.getWorld().getName())));
+        });
     }
 
     private String prettyLocation(Location location) {

@@ -75,6 +75,28 @@ public final class AsyncAttemptsAggregate<T, F extends FailureReason> {
     }
 
     /**
+     * Creates an {@link AsyncAttemptsAggregate} that defers to another one produced by a future - useful when
+     * an async step (e.g. a safety check) must complete before the actual attempts can be created.
+     * <p>
+     * Note {@link #getAttempts()} will return an empty list until the future completes, since the underlying
+     * attempts aren't known yet.
+     *
+     * @param future A future that will produce the real {@link AsyncAttemptsAggregate}.
+     * @param <T> The type of the successful result.
+     * @param <F> The type representing failure reasons.
+     * @return An instance of {@link AsyncAttemptsAggregate}.
+     *
+     * @since 5.7
+     */
+    @ApiStatus.AvailableSince("5.7")
+    public static <T, F extends FailureReason> AsyncAttemptsAggregate<T, F> fromFuture(
+            CompletableFuture<AsyncAttemptsAggregate<T, F>> future) {
+        return new AsyncAttemptsAggregate<>(
+                Collections.emptyList(),
+                future.thenCompose(AsyncAttemptsAggregate::toCompletableFuture));
+    }
+
+    /**
      * Creates an {@link AsyncAttemptsAggregate} representing an empty successful state.
      *
      * @param <T> The type of the successful result.
@@ -194,5 +216,17 @@ public final class AsyncAttemptsAggregate<T, F extends FailureReason> {
 
     private AsyncAttemptsAggregate<T, F> newFuture(CompletableFuture<AttemptsAggregate<T, F>> future) {
         return new AsyncAttemptsAggregate<>(attempts, future);
+    }
+
+    /**
+     * Gets the underlying future for this aggregate, completed once every attempt in it has completed.
+     *
+     * @return The future.
+     *
+     * @since 5.7
+     */
+    @ApiStatus.AvailableSince("5.7")
+    public CompletableFuture<AttemptsAggregate<T, F>> toCompletableFuture() {
+        return future;
     }
 }

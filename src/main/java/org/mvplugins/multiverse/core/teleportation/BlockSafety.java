@@ -1,5 +1,7 @@
 package org.mvplugins.multiverse.core.teleportation;
 
+import java.util.concurrent.CompletableFuture;
+
 import com.dumptruckman.minecraft.util.Logging;
 import io.vavr.control.Option;
 import jakarta.inject.Inject;
@@ -71,7 +73,7 @@ public final class BlockSafety {
             int maxHeight = Option.of(location.getWorld()).map(World::getMaxHeight).getOrElse(127);
             check.setY(maxHeight);
             while (check.getY() > 0) {
-                if (canSpawnAtLocationSafely(check)) {
+                if (canSpawnAtBlockSafely(check.getBlock())) {
                     return check;
                 }
                 check.setY(check.getY() - 1);
@@ -92,7 +94,7 @@ public final class BlockSafety {
             int minHeight = Option.of(location.getWorld()).map(World::getMinHeight).getOrElse(0);
             check.setY(minHeight);
             while (check.getY() < 127) { // SUPPRESS CHECKSTYLE: MagicNumberCheck
-                if (canSpawnAtLocationSafely(check)) {
+                if (canSpawnAtBlockSafely(check.getBlock())) {
                     return check;
                 }
                 check.setY(check.getY() + 1);
@@ -129,10 +131,10 @@ public final class BlockSafety {
      * etc. This also ensures there is enough space for a player to spawn!
      *
      * @param location  The {@link Location}
-     * @return Whether the player can spawn safely at the given {@link Location}
+     * @return A future with whether the player can spawn safely at the given {@link Location}
      */
-    public boolean canSpawnAtLocationSafely(@NotNull Location location) {
-        return worldTickDeferrer.runOnRegionThread(location, () -> canSpawnAtBlockSafely(location.getBlock()));
+    public CompletableFuture<Boolean> canSpawnAtLocationSafely(@NotNull Location location) {
+        return worldTickDeferrer.runOnRegionThreadAsync(location, () -> canSpawnAtBlockSafely(location.getBlock()));
     }
 
     /**
@@ -209,9 +211,9 @@ public final class BlockSafety {
      * Finds the closest possible safe location around the given location with the configured search radius.
      *
      * @param location  The target location to find
-     * @return The safe location if found, otherwise null.
+     * @return A future with the safe location if found, otherwise null.
      */
-    public @Nullable Location findSafeSpawnLocation(@NotNull Location location) {
+    public CompletableFuture<Location> findSafeSpawnLocation(@NotNull Location location) {
         return findSafeSpawnLocation(
                 location,
                 config.getSafeLocationHorizontalSearchRadius(),
@@ -224,29 +226,26 @@ public final class BlockSafety {
      * @param location          The target location to find
      * @param horizontalRange   The radius around x,z of given location to search.
      * @param verticalRange     The height of how far up and down to search.
-     * @return The safe location if found, otherwise null.
+     * @return A future with the safe location if found, otherwise null.
      */
-    public @Nullable Location findSafeSpawnLocation(@NotNull Location location, int horizontalRange, int verticalRange) {
-        Block safeBlock = findSafeSpawnBlock(location.getBlock(), horizontalRange, verticalRange);
-        if (safeBlock == null) {
-            return null;
-        }
-        return new Location(
-                location.getWorld(),
-                safeBlock.getX() + 0.5,
-                safeBlock.getY(),
-                safeBlock.getZ() + 0.5,
-                location.getYaw(),
-                location.getPitch());
+    public CompletableFuture<Location> findSafeSpawnLocation(@NotNull Location location, int horizontalRange, int verticalRange) {
+        return findSafeSpawnBlock(location.getBlock(), horizontalRange, verticalRange)
+                .thenApply(safeBlock -> safeBlock == null ? null : new Location(
+                        location.getWorld(),
+                        safeBlock.getX() + 0.5,
+                        safeBlock.getY(),
+                        safeBlock.getZ() + 0.5,
+                        location.getYaw(),
+                        location.getPitch()));
     }
 
     /**
      * Finds the closest possible location around the given block with the configured search radius.
      *
      * @param block The target block to find
-     * @return The safe block if found, otherwise null.
+     * @return A future with the safe block if found, otherwise null.
      */
-    public @Nullable Block findSafeSpawnBlock(@NotNull Block block) {
+    public CompletableFuture<Block> findSafeSpawnBlock(@NotNull Block block) {
         return findSafeSpawnBlock(
                 block,
                 config.getSafeLocationHorizontalSearchRadius(),
@@ -259,10 +258,10 @@ public final class BlockSafety {
      * @param block             The target block to find
      * @param horizontalRange   The radius around x,z of given block to search.
      * @param verticalRange     The height of how far up and down to search.
-     * @return The safe block if found, otherwise null.
+     * @return A future with the safe block if found, otherwise null.
      */
-    public @Nullable Block findSafeSpawnBlock(@NotNull Block block, int horizontalRange, int verticalRange) {
-        return worldTickDeferrer.runOnRegionThread(block.getLocation(), () -> {
+    public CompletableFuture<Block> findSafeSpawnBlock(@NotNull Block block, int horizontalRange, int verticalRange) {
+        return worldTickDeferrer.runOnRegionThreadAsync(block.getLocation(), () -> {
             Block searchResult = searchAroundXZ(block, horizontalRange);
             if (searchResult != null) {
                 return searchResult;

@@ -76,7 +76,7 @@ public final class LoadedMultiverseWorld extends MultiverseWorld {
 
     private Location readSpawnFromWorld(World world, Location location) {
         // Verify that location was safe
-        if (blockSafety.canSpawnAtLocationSafely(location)) {
+        if (blockSafety.canSpawnAtLocationSafely(location).join()) {
             return location;
         }
 
@@ -91,7 +91,7 @@ public final class LoadedMultiverseWorld extends MultiverseWorld {
         // The location is not safe, so we need to find a better one.
         Logging.warning("Spawn location from world.dat file was unsafe. Adjusting...");
         Logging.warning("Original Location: " + locationManipulation.strCoordsRaw(location));
-        Location newSpawn = blockSafety.findSafeSpawnLocation(location);
+        Location newSpawn = blockSafety.findSafeSpawnLocation(location).join();
         // I think we could also do this, as I think this is what Notch does.
         // Not sure how it will work in the nether...
         //Location newSpawn = this.spawnLocation.getWorld().getHighestBlockAt(this.spawnLocation).getLocation();

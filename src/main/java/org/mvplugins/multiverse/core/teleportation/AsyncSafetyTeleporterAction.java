@@ -22,6 +22,7 @@ import org.mvplugins.multiverse.core.utils.result.Attempt;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Teleports one or more entity safely to a location.
@@ -125,16 +126,26 @@ public final class AsyncSafetyTeleporterAction {
     public AsyncAttemptsAggregate<Void, TeleportFailureReason> teleportSingle(@NotNull Entity teleportee) {
         var localTeleporter = this.teleporter == null ? teleportee : this.teleporter;
 
-        return getLocation(teleportee).mapAttempt(this::doSafetyCheck)
-                .onSuccess(() -> {
+        Attempt<Location, TeleportFailureReason> locationAttempt = getLocation(teleportee);
+        if (locationAttempt.isFailure()) {
+            return AsyncAttemptsAggregate.allOf(AsyncAttempt.fromAttempt(locationAttempt.map(ignore -> (Void) null)));
+        }
+
+        // The safety check may need to dispatch to a different region than the one this thread currently owns
+        // (e.g. a cross-world teleport), so it's async - it must not be blocked on here.
+        CompletableFuture<AsyncAttemptsAggregate<Void, TeleportFailureReason>> deferred =
+                doSafetyCheck(locationAttempt.get()).thenApply(safetyAttempt -> {
+                    if (safetyAttempt.isFailure()) {
+                        return AsyncAttemptsAggregate.<Void, TeleportFailureReason>allOf(
+                                AsyncAttempt.fromAttempt(safetyAttempt.map(ignore -> (Void) null)));
+                    }
                     if (teleportee instanceof Player player) {
                         this.teleportQueue.addToQueue(localTeleporter, player);
                     }
-                })
-                .transform(
-                        location -> doAsyncTeleport(teleportee, location),
-                        failure -> AsyncAttemptsAggregate.allOf(AsyncAttempt.failure(failure))
-                )
+                    return doAsyncTeleport(teleportee, safetyAttempt.get());
+                });
+
+        return AsyncAttemptsAggregate.<Void, TeleportFailureReason>fromFuture(deferred)
                 .thenRun(() -> {
                     if (teleportee instanceof Player player) {
                         this.teleportQueue.popFromQueue(player.getName());
@@ -154,7 +165,12 @@ public final class AsyncSafetyTeleporterAction {
     @Deprecated(forRemoval = true, since = "5.1")
     @ApiStatus.ScheduledForRemoval(inVersion = "6.0")
     public AsyncAttempt<Void, TeleportFailureReason> teleport(@NotNull Entity teleportee) {
-        return teleportSingle(teleportee).getAttempts().get(0);
+        return AsyncAttempt.ofFuture(teleportSingle(teleportee).toCompletableFuture().handle((aggregate, throwable) ->
+                throwable != null
+                        ? Attempt.failure(TeleportFailureReason.TELEPORT_FAILED_EXCEPTION)
+                        : aggregate.hasFailure()
+                                ? Attempt.failure(TeleportFailureReason.TELEPORT_FAILED)
+                                : Attempt.success(null)));
     }
 
     private Attempt<Location, TeleportFailureReason> getLocation(@NotNull Entity teleportee) {
@@ -187,15 +203,13 @@ public final class AsyncSafetyTeleporterAction {
         return parseLocation(destination.getLocation(teleportee).getOrNull());
     }
 
-    private Attempt<Location, TeleportFailureReason> doSafetyCheck(@NotNull Location location) {
+    private CompletableFuture<Attempt<Location, TeleportFailureReason>> doSafetyCheck(@NotNull Location location) {
         if (!this.checkSafety) {
-            return Attempt.success(location);
+            return CompletableFuture.completedFuture(Attempt.success(location));
         }
-        Location safeLocation = blockSafety.findSafeSpawnLocation(location);
-        if (safeLocation == null) {
-            return Attempt.failure(TeleportFailureReason.UNSAFE_LOCATION);
-        }
-        return Attempt.success(safeLocation);
+        return blockSafety.findSafeSpawnLocation(location).thenApply(safeLocation -> safeLocation == null
+                ? Attempt.failure(TeleportFailureReason.UNSAFE_LOCATION)
+                : Attempt.success(safeLocation));
     }
 
     private AsyncAttemptsAggregate<Void, TeleportFailureReason> doAsyncTeleport(
