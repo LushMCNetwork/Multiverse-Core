@@ -28,7 +28,7 @@ abstract class AbstractCommandTest : TestWithMockBukkit() {
     fun setUpCommand() {
         worldManager = serviceLocator.getActiveService(WorldManager::class.java).takeIf { it != null } ?: run {
             throw IllegalStateException("WorldManager is not available as a service") }
-        assertTrue(worldManager.createWorld(CreateWorldOptions.worldName("world")).isSuccess)
+        assertTrue(worldManager.createWorld(CreateWorldOptions.worldName("world")).join().isSuccess)
 
         val commandManager = serviceLocator.getActiveService(MVCommandManager::class.java).takeIf { it != null } ?: run {
             throw IllegalStateException("MVCommandManager is not available as a service") }

@@ -53,7 +53,10 @@ public final class WorldTickDeferrer {
      * its result. If already on the global region thread, runs immediately with no dispatch.
      * <p>
      * Only safe to call from a thread that is not itself responsible for driving the global region (e.g. not
-     * during plugin onEnable, before the server has started ticking).
+     * during plugin onEnable, before the server has started ticking) and that isn't itself a region tick thread -
+     * blocking a region's own tick thread while waiting on the global region can deadlock, since the global
+     * region may need to coordinate with that very region to proceed. Prefer {@link #runOnGlobalRegionThreadAsync}
+     * for anything reachable from a command or event handler.
      *
      * @param action The action to run.
      * @param <T> The return type of the action.
@@ -65,6 +68,34 @@ public final class WorldTickDeferrer {
         }
         Logging.fine("Blocking on dispatch to global region thread...");
         return blockOn(future -> Bukkit.getGlobalRegionScheduler().execute(plugin, () -> complete(future, action)));
+    }
+
+    /**
+     * Runs the action on the global region thread without blocking the calling thread, immediately if already
+     * on it, otherwise dispatched there. Safe to call from any thread, including a region's own tick thread.
+     *
+     * @param action The action to run.
+     * @param <T> The return type of the action.
+     * @return A future completed with the result of the action once it has run.
+     */
+    public <T> CompletableFuture<T> runOnGlobalRegionThreadAsync(Supplier<T> action) {
+        if (Bukkit.isGlobalTickThread()) {
+            return completedOrFailed(action);
+        }
+        Logging.fine("Dispatching to global region thread...");
+        CompletableFuture<T> future = new CompletableFuture<>();
+        Bukkit.getGlobalRegionScheduler().execute(plugin, () -> complete(future, action));
+        return future;
+    }
+
+    private <T> CompletableFuture<T> completedOrFailed(Supplier<T> action) {
+        try {
+            return CompletableFuture.completedFuture(action.get());
+        } catch (Throwable throwable) {
+            CompletableFuture<T> future = new CompletableFuture<>();
+            future.completeExceptionally(throwable);
+            return future;
+        }
     }
 
     /**

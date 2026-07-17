@@ -19,7 +19,7 @@ class RegenCommandTest : AbstractCommandTest() {
             throw IllegalStateException("CoreConfig is not available as a service") }
         assertTrue(config.setConfirmMode(ConfirmMode.DISABLE).isSuccess)
 
-        testWorld = worldManager.createWorld(CreateWorldOptions.worldName("test")).get()
+        testWorld = worldManager.createWorld(CreateWorldOptions.worldName("test")).join().get()
     }
 
     @Test

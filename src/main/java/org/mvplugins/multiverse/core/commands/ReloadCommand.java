@@ -49,22 +49,32 @@ class ReloadCommand extends CoreCommand {
         issuer.sendInfo(MVCorei18n.RELOAD_RELOADING);
         try {
             this.config.load().getOrElseThrow(e -> new RuntimeException("Failed to load config", e));
-            this.worldManager.initAllWorlds().getOrElseThrow(e -> new RuntimeException("Failed to init worlds", e));
-            this.anchorManager.loadAnchors().getOrElseThrow(e -> new RuntimeException("Failed to load anchors", e));
         } catch (Exception e) {
             e.printStackTrace();
+            return;
         }
 
-        List<String> configsLoaded = new ArrayList<>();
-        configsLoaded.add("Multiverse-Core - config.yml");
-        configsLoaded.add("Multiverse-Core - worlds.yml");
-        configsLoaded.add("Multiverse-Core - anchors.yml");
+        // initAllWorlds dispatches to the global region thread on Folia and must not be blocked on here -
+        // this command may run on a player's own region thread, and blocking would risk a deadlock.
+        this.worldManager.initAllWorlds().thenAccept(result -> {
+            try {
+                result.getOrElseThrow(e -> new RuntimeException("Failed to init worlds", e));
+                this.anchorManager.loadAnchors().getOrElseThrow(e -> new RuntimeException("Failed to load anchors", e));
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
 
-        MVConfigReloadEvent configReload = new MVConfigReloadEvent(configsLoaded);
-        this.pluginManager.callEvent(configReload);
+            List<String> configsLoaded = new ArrayList<>();
+            configsLoaded.add("Multiverse-Core - config.yml");
+            configsLoaded.add("Multiverse-Core - worlds.yml");
+            configsLoaded.add("Multiverse-Core - anchors.yml");
 
-        configReload.getAllConfigsLoaded().forEach(issuer::sendMessage);
-        issuer.sendInfo(MVCorei18n.RELOAD_SUCCESS);
+            MVConfigReloadEvent configReload = new MVConfigReloadEvent(configsLoaded);
+            this.pluginManager.callEvent(configReload);
+
+            configReload.getAllConfigsLoaded().forEach(issuer::sendMessage);
+            issuer.sendInfo(MVCorei18n.RELOAD_SUCCESS);
+        });
     }
 
     @Service

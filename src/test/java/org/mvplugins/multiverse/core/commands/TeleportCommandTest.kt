@@ -19,7 +19,7 @@ class TeleportCommandTest : AbstractCommandTest() {
         server.addPlayer("Player1")
         server.addPlayer("Player2")
         server.addPlayer("Player3")
-        assertTrue(worldManager.createWorld(CreateWorldOptions.worldName("otherworld")).isSuccess)
+        assertTrue(worldManager.createWorld(CreateWorldOptions.worldName("otherworld")).join().isSuccess)
     }
 
     @Test

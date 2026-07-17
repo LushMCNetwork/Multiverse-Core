@@ -28,7 +28,7 @@ class ConfigTeleportInterceptTest : TestWithMockBukkit() {
             throw IllegalStateException("WorldManager is not available as a service") }
 
         player = server.addPlayer()
-        worldManager.createWorld(CreateWorldOptions.worldName("world2")).get()
+        worldManager.createWorld(CreateWorldOptions.worldName("world2")).join().get()
         location = Location(server.getWorld("world2"), 0.0, 5.0, 0.0)
         config.enforceAccess = true
     }

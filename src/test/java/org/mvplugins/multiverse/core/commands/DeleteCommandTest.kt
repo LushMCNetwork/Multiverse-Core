@@ -22,7 +22,7 @@ class DeleteCommandTest : AbstractCommandTest() {
             throw IllegalStateException("CoreConfig is not available as a service") }
         config.confirmMode = ConfirmMode.DISABLE
 
-        testWorld = worldManager.createWorld(CreateWorldOptions.worldName("test")).get()
+        testWorld = worldManager.createWorld(CreateWorldOptions.worldName("test")).join().get()
     }
 
     @Test
@@ -33,7 +33,7 @@ class DeleteCommandTest : AbstractCommandTest() {
 
     @Test
     fun `Delete unloaded world`() {
-        worldManager.unloadWorld(UnloadWorldOptions.world(testWorld))
+        worldManager.unloadWorld(UnloadWorldOptions.world(testWorld)).join()
         assertTrue(Bukkit.dispatchCommand(console, "mv delete test"))
         assertFalse(worldManager.getWorld("test").isDefined)
     }

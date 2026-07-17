@@ -105,7 +105,7 @@ public class MultiverseCore extends MultiverseModule {
         // server's tick loop starts, so nothing is draining the global region scheduler's queue yet - blocking
         // here to wait for it would deadlock the very thread that needs to start ticking to drain it.
         getServer().getGlobalRegionScheduler().run(this, task -> {
-            worldManagerProvider.get().initAllWorlds().andThenTry(() -> {
+            worldManagerProvider.get().initAllWorlds().join().andThenTry(() -> {
                 loadEconomist(); // Setup economy here so vault is loaded
                 loadAnchors();
                 registerDynamicListeners(CoreListener.class);

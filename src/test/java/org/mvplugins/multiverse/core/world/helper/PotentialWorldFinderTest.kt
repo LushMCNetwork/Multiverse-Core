@@ -26,7 +26,7 @@ class PotentialWorldFinderTest : TestWithMockBukkit() {
         worldManager = serviceLocator.getActiveService(WorldManager::class.java).takeIf { it != null } ?: run {
             throw IllegalStateException("WorldManager is not available as a service") }
 
-        assertTrue(worldManager.createWorld(CreateWorldOptions.worldName("world")).isSuccess)
+        assertTrue(worldManager.createWorld(CreateWorldOptions.worldName("world")).join().isSuccess)
         world = worldManager.getLoadedWorld("world").get()
         assertNotNull(world)
     }

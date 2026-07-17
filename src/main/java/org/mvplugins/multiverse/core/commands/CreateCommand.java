@@ -94,8 +94,9 @@ class CreateCommand extends CoreCommand {
                         .useSpawnAdjust(!parsedFlags.hasFlag(flags.noAdjustSpawn))
                         .worldPropertyStrings(StringFormatter.parseCSVMap(parsedFlags.flagValue(flags.properties)))
                         .worldType(parsedFlags.flagValue(flags.worldType, WorldType.NORMAL)))
-                .onSuccess(newWorld -> messageSuccess(issuer, newWorld))
-                .onFailure(failure -> messageFailure(issuer, failure));
+                .thenAccept(attempt -> attempt
+                        .onSuccess(newWorld -> messageSuccess(issuer, newWorld))
+                        .onFailure(failure -> messageFailure(issuer, failure)));
     }
 
     private void messageWorldDetails(MVCommandIssuer issuer, String worldName,

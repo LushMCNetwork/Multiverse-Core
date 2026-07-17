@@ -122,7 +122,7 @@ class RegenCommand extends CoreCommand {
                 .keepWorldBorder(!parsedFlags.hasFlag(flags.resetWorldBorder))
                 .keepFiles(parsedFlags.flagValue(flags.keepFiles));
 
-        worldManager.regenWorld(regenWorldOptions).onSuccess(newWorld -> {
+        worldManager.regenWorld(regenWorldOptions).thenAccept(attempt -> attempt.onSuccess(newWorld -> {
             Logging.fine("World regen success: " + newWorld);
             issuer.sendInfo(MVCorei18n.REGEN_SUCCESS, Replace.WORLD.with(newWorld.getName()));
             if (parsedFlags.hasFlag(flags.removePlayers)) {
@@ -131,7 +131,7 @@ class RegenCommand extends CoreCommand {
         }).onFailure(failure -> {
             Logging.warning("World regen failure: " + failure);
             issuer.sendError(failure.getFailureMessage());
-        });
+        }));
     }
 
     @Service

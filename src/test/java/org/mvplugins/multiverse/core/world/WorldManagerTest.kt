@@ -40,11 +40,11 @@ class WorldManagerTest : TestWithMockBukkit() {
         worldManager = serviceLocator.getActiveService(WorldManager::class.java).takeIf { it != null } ?: run {
             throw IllegalStateException("WorldManager is not available as a service") }
 
-        assertTrue(worldManager.createWorld(CreateWorldOptions.worldName("world")).isSuccess)
+        assertTrue(worldManager.createWorld(CreateWorldOptions.worldName("world")).join().isSuccess)
         world = worldManager.getLoadedWorld("world").get()
         assertNotNull(world)
 
-        assertTrue(worldManager.createWorld(CreateWorldOptions.worldName("World2")).isSuccess)
+        assertTrue(worldManager.createWorld(CreateWorldOptions.worldName("World2")).join().isSuccess)
         world2 = worldManager.getLoadedWorld("World2").get()
         assertNotNull(world2)
     }
@@ -58,7 +58,7 @@ class WorldManagerTest : TestWithMockBukkit() {
             .seed(1234L)
             .useSpawnAdjust(false)
             .worldType(WorldType.FLAT)
-        ).isSuccess)
+        ).join().isSuccess)
 
         val getWorld = worldManager.getLoadedWorld("Section/my-nether_world")
         assertTrue(getWorld.isDefined)
@@ -81,7 +81,7 @@ class WorldManagerTest : TestWithMockBukkit() {
     fun `Create world failed - invalid worldname`() {
         assertEquals(
             CreateFailureReason.INVALID_WORLDNAME,
-            worldManager.createWorld(CreateWorldOptions.worldName("*!@^&#*(")).failureReason
+            worldManager.createWorld(CreateWorldOptions.worldName("*!@^&#*(")).join().failureReason
         )
     }
 
@@ -89,7 +89,7 @@ class WorldManagerTest : TestWithMockBukkit() {
     fun `Create world failed - world exists and loaded`() {
         assertEquals(
             CreateFailureReason.WORLD_EXIST_LOADED,
-            worldManager.createWorld(CreateWorldOptions.worldName("world")).failureReason
+            worldManager.createWorld(CreateWorldOptions.worldName("world")).join().failureReason
         )
     }
 
@@ -97,20 +97,20 @@ class WorldManagerTest : TestWithMockBukkit() {
     fun `Create world failed - world exists and loaded (case insensitive)`() {
         assertEquals(
             CreateFailureReason.WORLD_EXIST_LOADED,
-            worldManager.createWorld(CreateWorldOptions.worldName("WoRld2")).failureReason
+            worldManager.createWorld(CreateWorldOptions.worldName("WoRld2")).join().failureReason
         )
         assertEquals(
             CreateFailureReason.WORLD_EXIST_LOADED,
-            worldManager.createWorld(CreateWorldOptions.worldName("WORLD2")).failureReason
+            worldManager.createWorld(CreateWorldOptions.worldName("WORLD2")).join().failureReason
         )
     }
 
     @Test
     fun `Create world failed - world exists but unloaded`() {
-        assertTrue(worldManager.unloadWorld(UnloadWorldOptions.world(world)).isSuccess)
+        assertTrue(worldManager.unloadWorld(UnloadWorldOptions.world(world)).join().isSuccess)
         assertEquals(
             CreateFailureReason.WORLD_EXIST_UNLOADED,
-            worldManager.createWorld(CreateWorldOptions.worldName("world")).failureReason
+            worldManager.createWorld(CreateWorldOptions.worldName("world")).join().failureReason
         )
     }
 
@@ -119,18 +119,18 @@ class WorldManagerTest : TestWithMockBukkit() {
         File(Bukkit.getWorldContainer(), "worldfolder").mkdir()
         assertEquals(
             CreateFailureReason.WORLD_EXIST_FOLDER,
-            worldManager.createWorld(CreateWorldOptions.worldName("worldfolder")).failureReason
+            worldManager.createWorld(CreateWorldOptions.worldName("worldfolder")).join().failureReason
         )
     }
 
     @Test
     fun `Remove world`() {
-        assertTrue(worldManager.removeWorld(RemoveWorldOptions.world(world)).isSuccess)
+        assertTrue(worldManager.removeWorld(RemoveWorldOptions.world(world)).join().isSuccess)
         assertFalse(worldManager.getWorld("world").isDefined)
         assertFalse(worldManager.getLoadedWorld("world").isDefined)
         assertFalse(worldManager.getUnloadedWorld("world").isDefined)
 
-        assertTrue(worldManager.removeWorld(RemoveWorldOptions.world(world2)).isSuccess)
+        assertTrue(worldManager.removeWorld(RemoveWorldOptions.world(world2)).join().isSuccess)
         assertFalse(worldManager.getWorld("World2").isDefined)
         assertFalse(worldManager.getLoadedWorld("World2").isDefined)
         assertFalse(worldManager.getUnloadedWorld("World2").isDefined)
@@ -142,14 +142,14 @@ class WorldManagerTest : TestWithMockBukkit() {
     @Test
     fun `Delete world`() {
         assertTrue(File(Bukkit.getWorldContainer(), "world").isDirectory)
-        assertTrue(worldManager.deleteWorld(DeleteWorldOptions.world(world)).isSuccess)
+        assertTrue(worldManager.deleteWorld(DeleteWorldOptions.world(world)).join().isSuccess)
         assertFalse(worldManager.getWorld("world").isDefined)
         assertFalse(worldManager.getLoadedWorld("world").isDefined)
         assertFalse(worldManager.getUnloadedWorld("world").isDefined)
         assertFalse(File(Bukkit.getWorldContainer(), "world").isDirectory)
 
         assertTrue(File(Bukkit.getWorldContainer(), "World2").isDirectory)
-        assertTrue(worldManager.deleteWorld(DeleteWorldOptions.world(world2)).isSuccess)
+        assertTrue(worldManager.deleteWorld(DeleteWorldOptions.world(world2)).join().isSuccess)
         assertFalse(worldManager.getWorld("World2").isDefined)
         assertFalse(worldManager.getLoadedWorld("World2").isDefined)
         assertFalse(worldManager.getUnloadedWorld("World2").isDefined)
@@ -162,14 +162,14 @@ class WorldManagerTest : TestWithMockBukkit() {
 
     @Test
     fun `Unload and load world`() {
-        assertTrue(worldManager.unloadWorld(UnloadWorldOptions.world(world2).saveBukkitWorld(true)).isSuccess)
+        assertTrue(worldManager.unloadWorld(UnloadWorldOptions.world(world2).saveBukkitWorld(true)).join().isSuccess)
         assertFalse(world2.isLoaded)
         assertFalse(world2.bukkitWorld.isDefined)
         assertFalse(worldManager.getLoadedWorld("World2").isDefined)
         assertTrue(worldManager.getWorld("World2").isDefined)
         assertTrue(worldManager.getUnloadedWorld("World2").isDefined)
 
-        assertTrue(worldManager.loadWorld(LoadWorldOptions.world(world2)).isSuccess)
+        assertTrue(worldManager.loadWorld(LoadWorldOptions.world(world2)).join().isSuccess)
         assertTrue(world2.isLoaded)
         assertTrue(worldManager.getLoadedWorld("World2").flatMap{ w -> w.bukkitWorld }.isDefined)
         assertTrue(worldManager.getLoadedWorld("World2").isDefined)
@@ -178,11 +178,11 @@ class WorldManagerTest : TestWithMockBukkit() {
 
     @Test
     fun `Load world failed - invalid world folder`() {
-        assertTrue(worldManager.unloadWorld(UnloadWorldOptions.world(world2)).isSuccess)
+        assertTrue(worldManager.unloadWorld(UnloadWorldOptions.world(world2)).join().isSuccess)
         File(Bukkit.getWorldContainer(), "World2/").deleteRecursively()
         assertEquals(
             LoadFailureReason.WORLD_FOLDER_INVALID,
-            worldManager.loadWorld(LoadWorldOptions.world(world2)).failureReason
+            worldManager.loadWorld(LoadWorldOptions.world(world2)).join().failureReason
         )
     }
 
@@ -212,7 +212,7 @@ class WorldManagerTest : TestWithMockBukkit() {
             RegenWorldOptions
             .world(world2)
             .seed(4321L)
-        ).isSuccess)
+        ).join().isSuccess)
 
         val getWorld = worldManager.getLoadedWorld("World2")
         assertTrue(getWorld.isDefined)
@@ -230,7 +230,7 @@ class WorldManagerTest : TestWithMockBukkit() {
 
     @Test
     fun `Clone world`() {
-        assertTrue(worldManager.cloneWorld(CloneWorldOptions.fromTo(world, "cloneworld").saveBukkitWorld(false)).isSuccess)
+        assertTrue(worldManager.cloneWorld(CloneWorldOptions.fromTo(world, "cloneworld").saveBukkitWorld(false)).join().isSuccess)
         val getWorld = worldManager.getLoadedWorld("cloneworld")
         assertTrue(getWorld.isDefined)
         val world = getWorld.get()
@@ -246,7 +246,7 @@ class WorldManagerTest : TestWithMockBukkit() {
     fun `Clone world failed - invalid world name`() {
         assertEquals(
             CloneFailureReason.INVALID_WORLDNAME,
-            worldManager.cloneWorld(CloneWorldOptions.fromTo(world, "HU(@*!#")).failureReason
+            worldManager.cloneWorld(CloneWorldOptions.fromTo(world, "HU(@*!#")).join().failureReason
         )
     }
 
@@ -254,16 +254,16 @@ class WorldManagerTest : TestWithMockBukkit() {
     fun `Clone world failed - target world exists and loaded`() {
         assertEquals(
             CloneFailureReason.WORLD_EXIST_LOADED,
-            worldManager.cloneWorld(CloneWorldOptions.fromTo(world, "World2")).failureReason
+            worldManager.cloneWorld(CloneWorldOptions.fromTo(world, "World2")).join().failureReason
         )
     }
 
     @Test
     fun `Clone world failed - target world exists but unloaded`() {
-        assertTrue(worldManager.unloadWorld(UnloadWorldOptions.world(world2)).isSuccess)
+        assertTrue(worldManager.unloadWorld(UnloadWorldOptions.world(world2)).join().isSuccess)
         assertEquals(
             CloneFailureReason.WORLD_EXIST_UNLOADED,
-            worldManager.cloneWorld(CloneWorldOptions.fromTo(world, "World2")).failureReason
+            worldManager.cloneWorld(CloneWorldOptions.fromTo(world, "World2")).join().failureReason
         )
     }
 
@@ -272,7 +272,7 @@ class WorldManagerTest : TestWithMockBukkit() {
         File(Bukkit.getWorldContainer(), "worldfolder").mkdir()
         assertEquals(
             CloneFailureReason.WORLD_EXIST_FOLDER,
-            worldManager.cloneWorld(CloneWorldOptions.fromTo(world, "worldfolder")).failureReason
+            worldManager.cloneWorld(CloneWorldOptions.fromTo(world, "worldfolder")).join().failureReason
         )
     }
 
@@ -294,7 +294,7 @@ class WorldManagerTest : TestWithMockBukkit() {
         assertFalse(worldManager.isUnloadedWorld("world"))
         assertTrue(worldManager.isWorld("world"))
 
-        val unloadedWorld = worldManager.unloadWorld(UnloadWorldOptions.world(world)).get()
+        val unloadedWorld = worldManager.unloadWorld(UnloadWorldOptions.world(world)).join().get()
 
         assertNull(worldManager.getLoadedWorld("world").orNull)
         assertEquals(unloadedWorld, worldManager.getUnloadedWorld("world").orNull)
@@ -315,7 +315,7 @@ class WorldManagerTest : TestWithMockBukkit() {
         assertFalse(worldManager.isUnloadedWorld("WoRlD2"))
         assertTrue(worldManager.isWorld("wORLD2"))
 
-        val unloadedWorld2 = worldManager.unloadWorld(UnloadWorldOptions.world(world2)).get()
+        val unloadedWorld2 = worldManager.unloadWorld(UnloadWorldOptions.world(world2)).join().get()
 
         assertNull(worldManager.getLoadedWorld("wOrld2").orNull)
         assertEquals(unloadedWorld2, worldManager.getUnloadedWorld("wOrld2").orNull)

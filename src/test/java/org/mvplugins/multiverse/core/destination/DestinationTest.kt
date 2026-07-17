@@ -26,7 +26,7 @@ class DestinationTest : TestWithMockBukkit() {
         destinationsProvider = serviceLocator.getActiveService(DestinationsProvider::class.java).takeIf { it != null } ?: run {
             throw IllegalStateException("DestinationsProvider is not available as a service") }
 
-        world = worldManager.createWorld(CreateWorldOptions.worldName("world")).get()
+        world = worldManager.createWorld(CreateWorldOptions.worldName("world")).join().get()
         player = server.addPlayer("benji_0224")
         player.bedSpawnLocation = Location(world.bukkitWorld.orNull, 5.0, 10.0, 5.0)
     }

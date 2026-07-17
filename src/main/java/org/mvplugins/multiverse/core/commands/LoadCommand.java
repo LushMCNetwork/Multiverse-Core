@@ -57,13 +57,14 @@ class LoadCommand extends CoreCommand {
         issuer.sendInfo(MVCorei18n.LOAD_LOADING, Replace.WORLD.with(world.getName()));
         worldManager.loadWorld(LoadWorldOptions.world(world)
                         .doFolderCheck(!parsedFlags.hasFlag(flags.skipFolderCheck)))
-                .onSuccess(newWorld -> {
-                    Logging.fine("World load success: " + newWorld);
-                    issuer.sendInfo(MVCorei18n.LOAD_SUCCESS, Replace.WORLD.with(newWorld.getName()));
-                }).onFailure(failure -> {
-                    Logging.fine("World load failure: " + failure);
-                    issuer.sendError(failure.getFailureMessage());
-                });
+                .thenAccept(attempt -> attempt
+                        .onSuccess(newWorld -> {
+                            Logging.fine("World load success: " + newWorld);
+                            issuer.sendInfo(MVCorei18n.LOAD_SUCCESS, Replace.WORLD.with(newWorld.getName()));
+                        }).onFailure(failure -> {
+                            Logging.fine("World load failure: " + failure);
+                            issuer.sendError(failure.getFailureMessage());
+                        }));
     }
 
     @Service

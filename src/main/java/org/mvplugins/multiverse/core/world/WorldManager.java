@@ -7,6 +7,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -154,13 +155,14 @@ public final class WorldManager {
     /**
      * Loads all worlds from the worlds config.
      *
-     * @return The result of the load.
+     * @return A future with the result of the load.
      */
     @ApiStatus.Internal
-    public Try<Void> initAllWorlds() {
+    public CompletableFuture<Try<Void>> initAllWorlds() {
         // Touches world config and block state for every world, which on Folia may only happen on the
-        // global region thread. At plugin enable time we're not on it yet, so dispatch there.
-        return worldTickDeferrer.runOnGlobalRegionThread(() -> updateWorldsFromConfig().andThenTry(() -> {
+        // global region thread. At plugin enable time we're not on it yet, so dispatch there. Must not
+        // block on this from a command/event handler thread - see runOnGlobalRegionThreadAsync.
+        return worldTickDeferrer.runOnGlobalRegionThreadAsync(() -> updateWorldsFromConfig().andThenTry(() -> {
             importExistingWorlds();
             autoLoadWorlds();
         }).flatMap(ignore -> saveWorldsConfig()));
@@ -191,7 +193,7 @@ public final class WorldManager {
 
     private void removeWorldsNotInConfigs(Collection<WorldKeyOrName> removedWorlds) {
         removedWorlds.forEach(keyOrName -> getWorld(keyOrName.usableName())
-                .map(world -> removeWorld(RemoveWorldOptions.world(world)))
+                .map(world -> removeWorld(RemoveWorldOptions.world(world)).join())
                 .getOrElse(() -> worldActionResult(RemoveFailureReason.WORLD_NON_EXISTENT, keyOrName))
                 .onFailure(failure ->
                         Logging.severe("Failed to unload world %s: %s", keyOrName, failure))
@@ -232,6 +234,7 @@ public final class WorldManager {
                         ImportWorldOptions.worldName(world.getName())
                                 .environment(world.getEnvironment())
                                 .generator(generatorProvider.getDefaultGeneratorForWorld(world.getName())))
+                        .join()
                         .onFailure(failure ->
                                 Logging.severe("Failed to import world %s: %s", world.getName(), failure))
                         .onSuccess(newMVWorld ->
@@ -245,6 +248,7 @@ public final class WorldManager {
         getWorlds().stream()
                 .filter(world -> !isLoadedWorld(world) && world.isAutoLoad())
                 .forEach(world -> loadWorld(LoadWorldOptions.world(world))
+                        .join()
                         .onFailure(failure ->
                                 Logging.severe("Failed to autoload world %s: %s", world.getName(), failure))
                         .onSuccess(newMVWorld ->
@@ -255,10 +259,10 @@ public final class WorldManager {
      * Creates a new world.
      *
      * @param options The options for customizing the creation of a new world.
-     * @return The result of the creation.
+     * @return A future with the result of the creation.
      */
-    public Attempt<LoadedMultiverseWorld, CreateFailureReason> createWorld(CreateWorldOptions options) {
-        return worldTickDeferrer.runOnGlobalRegionThread(() ->
+    public CompletableFuture<Attempt<LoadedMultiverseWorld, CreateFailureReason>> createWorld(CreateWorldOptions options) {
+        return worldTickDeferrer.runOnGlobalRegionThreadAsync(() ->
                 parseCreateWorldOptionsKeyOrName(options).mapAttempt(this::doCreateWorld));
     }
 
@@ -320,10 +324,10 @@ public final class WorldManager {
      * Imports an existing world folder.
      *
      * @param options The options for customizing the import of an existing world folder.
-     * @return The result of the import.
+     * @return A future with the result of the import.
      */
-    public Attempt<LoadedMultiverseWorld, ImportFailureReason> importWorld(ImportWorldOptions options) {
-        return worldTickDeferrer.runOnGlobalRegionThread(() -> doImportWorldEntry(options));
+    public CompletableFuture<Attempt<LoadedMultiverseWorld, ImportFailureReason>> importWorld(ImportWorldOptions options) {
+        return worldTickDeferrer.runOnGlobalRegionThreadAsync(() -> doImportWorldEntry(options));
     }
 
     private Attempt<LoadedMultiverseWorld, ImportFailureReason> doImportWorldEntry(ImportWorldOptions options) {
@@ -479,7 +483,7 @@ public final class WorldManager {
     @ApiStatus.ScheduledForRemoval(inVersion = "6.0")
     public Attempt<LoadedMultiverseWorld, LoadFailureReason> loadWorld(@NotNull String worldName) {
         return getWorld(worldName)
-                .map(world -> loadWorld(LoadWorldOptions.world(world)))
+                .map(world -> loadWorld(LoadWorldOptions.world(world)).join())
                 .getOrElse(() -> worldNameChecker.isValidWorldFolder(worldName)
                         ? worldActionResult(LoadFailureReason.WORLD_EXIST_FOLDER, worldName)
                         : worldActionResult(LoadFailureReason.WORLD_NON_EXISTENT, worldName));
@@ -496,20 +500,20 @@ public final class WorldManager {
     @Deprecated(since = "5.2", forRemoval = true)
     @ApiStatus.ScheduledForRemoval(inVersion = "6.0")
     public Attempt<LoadedMultiverseWorld, LoadFailureReason> loadWorld(@NotNull MultiverseWorld world) {
-        return loadWorld(LoadWorldOptions.world(world));
+        return loadWorld(LoadWorldOptions.world(world)).join();
     }
 
     /**
      * Loads an existing world in config.
      *
      * @param options The options for customizing the loading of a world.
-     * @return The result of the load.
+     * @return A future with the result of the load.
      *
      * @since 5.2
      */
     @ApiStatus.AvailableSince("5.2")
-    public Attempt<LoadedMultiverseWorld, LoadFailureReason> loadWorld(@NotNull LoadWorldOptions options) {
-        return worldTickDeferrer.runOnGlobalRegionThread(() ->
+    public CompletableFuture<Attempt<LoadedMultiverseWorld, LoadFailureReason>> loadWorld(@NotNull LoadWorldOptions options) {
+        return worldTickDeferrer.runOnGlobalRegionThreadAsync(() ->
                 validateWorldToLoad(options).mapAttempt(this::doLoadWorld));
     }
 
@@ -604,10 +608,10 @@ public final class WorldManager {
      * Unloads an existing multiverse world. It will still remain as an unloaded world.
      *
      * @param options The options for customizing the unloading of a world.
-     * @return The result of the unload action.
+     * @return A future with the result of the unload action.
      */
-    public Attempt<MultiverseWorld, UnloadFailureReason> unloadWorld(@NotNull UnloadWorldOptions options) {
-        return worldTickDeferrer.runOnGlobalRegionThread(() -> doUnloadWorld(options));
+    public CompletableFuture<Attempt<MultiverseWorld, UnloadFailureReason>> unloadWorld(@NotNull UnloadWorldOptions options) {
+        return worldTickDeferrer.runOnGlobalRegionThreadAsync(() -> doUnloadWorld(options));
     }
 
     private Attempt<MultiverseWorld, UnloadFailureReason> doUnloadWorld(@NotNull UnloadWorldOptions options) {
@@ -654,7 +658,7 @@ public final class WorldManager {
     @ApiStatus.ScheduledForRemoval(inVersion = "6.0")
     public Attempt<String, RemoveFailureReason> removeWorld(@NotNull String worldName) {
         return getWorld(worldName)
-                .map(world -> removeWorld(RemoveWorldOptions.world(world)))
+                .map(world -> removeWorld(RemoveWorldOptions.world(world)).join())
                 .getOrElse(() -> worldActionResult(RemoveFailureReason.WORLD_NON_EXISTENT, worldName));
     }
 
@@ -670,7 +674,7 @@ public final class WorldManager {
     @Deprecated(since = "5.2", forRemoval = true)
     @ApiStatus.ScheduledForRemoval(inVersion = "6.0")
     public Attempt<String, RemoveFailureReason> removeWorld(@NotNull MultiverseWorld world) {
-        return removeWorld(RemoveWorldOptions.world(world));
+        return removeWorld(RemoveWorldOptions.world(world)).join();
     }
 
     /**
@@ -685,7 +689,7 @@ public final class WorldManager {
     @Deprecated(since = "5.2", forRemoval = true)
     @ApiStatus.ScheduledForRemoval(inVersion = "6.0")
     public Attempt<String, RemoveFailureReason> removeWorld(@NotNull LoadedMultiverseWorld loadedWorld) {
-        return removeWorld(RemoveWorldOptions.world(loadedWorld));
+        return removeWorld(RemoveWorldOptions.world(loadedWorld)).join();
     }
 
     /**
@@ -693,13 +697,13 @@ public final class WorldManager {
      * to Multiverse. World files will not be deleted.
      *
      * @param options The options for customizing the removal of a world.
-     * @return The result of the remove action.
+     * @return A future with the result of the remove action.
      *
      * @since 5.2
      */
     @ApiStatus.AvailableSince("5.2")
-    public Attempt<String, RemoveFailureReason> removeWorld(@NotNull RemoveWorldOptions options) {
-        return worldTickDeferrer.runOnGlobalRegionThread(() -> {
+    public CompletableFuture<Attempt<String, RemoveFailureReason>> removeWorld(@NotNull RemoveWorldOptions options) {
+        return worldTickDeferrer.runOnGlobalRegionThreadAsync(() -> {
             MultiverseWorld world = options.world();
             return getLoadedWorld(world).fold(
                     () -> removeWorldFromConfig(world),
@@ -714,7 +718,7 @@ public final class WorldManager {
                 .saveBukkitWorld(options.saveBukkitWorld())
                 .unloadBukkitWorld(options.unloadBukkitWorld());
 
-        return unloadWorld(unloadWorldOptions)
+        return unloadWorld(unloadWorldOptions).join()
                 .transform(RemoveFailureReason.UNLOAD_FAILED)
                 .mapAttempt(this::removeWorldFromConfig);
     }
@@ -745,16 +749,16 @@ public final class WorldManager {
      * Warning: This will delete all world files.
      *
      * @param options The options for customizing the deletion of a world.
-     * @return The result of the delete action.
+     * @return A future with the result of the delete action.
      */
-    public Attempt<String, DeleteFailureReason> deleteWorld(@NotNull DeleteWorldOptions options) {
-        return worldTickDeferrer.runOnGlobalRegionThread(() -> getLoadedWorld(options.world()).fold(
+    public CompletableFuture<Attempt<String, DeleteFailureReason>> deleteWorld(@NotNull DeleteWorldOptions options) {
+        return worldTickDeferrer.runOnGlobalRegionThreadAsync(() -> getLoadedWorld(options.world()).fold(
                 () -> loadThenDeleteWorld(options),
                 world -> doDeleteWorld(world, options)));
     }
 
     private Attempt<String, DeleteFailureReason> loadThenDeleteWorld(@NotNull DeleteWorldOptions options) {
-        return loadWorld(LoadWorldOptions.world(options.world()))
+        return loadWorld(LoadWorldOptions.world(options.world())).join()
                 .fold(
                         ignore -> worldActionResult(DeleteFailureReason.LOAD_FAILED, options.world().getName()),
                         loadedWorld -> doDeleteWorld(loadedWorld, options)
@@ -782,7 +786,7 @@ public final class WorldManager {
                         .world(world)
                         .unloadBukkitWorld(true)
                         .saveBukkitWorld(false)
-                ).transform(DeleteFailureReason.REMOVE_FAILED))
+                ).join().transform(DeleteFailureReason.REMOVE_FAILED))
                 .mapAttempt(() -> fileUtils.deleteFolder(worldFolder.get(), options.keepFiles()).fold(
                         exception -> worldActionResult(DeleteFailureReason.FAILED_TO_DELETE_FOLDER,
                                 world.getName(), exception),
@@ -805,10 +809,10 @@ public final class WorldManager {
      * Clones an existing multiverse world.
      *
      * @param options The options for customizing the cloning of a world.
-     * @return The result of the clone.
+     * @return A future with the result of the clone.
      */
-    public Attempt<LoadedMultiverseWorld, CloneFailureReason> cloneWorld(@NotNull CloneWorldOptions options) {
-        return worldTickDeferrer.runOnGlobalRegionThread(() -> parseCloneWorldOptionsNewWorld(options)
+    public CompletableFuture<Attempt<LoadedMultiverseWorld, CloneFailureReason>> cloneWorld(@NotNull CloneWorldOptions options) {
+        return worldTickDeferrer.runOnGlobalRegionThreadAsync(() -> parseCloneWorldOptionsNewWorld(options)
                 .mapAttempt(this::cloneWorldCopyFolder)
                 .mapAttempt(keyOrNameWithOptions -> {
                     ImportWorldOptions importWorldOptions = ImportWorldOptions
@@ -816,7 +820,7 @@ public final class WorldManager {
                             .biome(options.fromWorld().getBiome())
                             .environment(options.fromWorld().getEnvironment())
                             .generator(options.fromWorld().getGenerator());
-                    return importWorld(importWorldOptions).transform(CloneFailureReason.IMPORT_FAILED);
+                    return importWorld(importWorldOptions).join().transform(CloneFailureReason.IMPORT_FAILED);
                 })
                 .onSuccess(newWorld -> {
                     cloneWorldTransferData(options, newWorld);
@@ -899,10 +903,10 @@ public final class WorldManager {
      * Regenerates a world.
      *
      * @param options The options for customizing the regeneration of a world.
-     * @return The result of the regeneration.
+     * @return A future with the result of the regeneration.
      */
-    public Attempt<LoadedMultiverseWorld, RegenFailureReason> regenWorld(@NotNull RegenWorldOptions options) {
-        return worldTickDeferrer.runOnGlobalRegionThread(() -> {
+    public CompletableFuture<Attempt<LoadedMultiverseWorld, RegenFailureReason>> regenWorld(@NotNull RegenWorldOptions options) {
+        return worldTickDeferrer.runOnGlobalRegionThreadAsync(() -> {
             LoadedMultiverseWorld world = options.world();
             DataTransfer<LoadedMultiverseWorld> dataTransfer = regenWorldTransferData(options, world);
             boolean shouldKeepSpawnLocation = options.keepWorldConfig() && options.seed() == world.getSeed();
@@ -919,9 +923,9 @@ public final class WorldManager {
                     .worldType(world.getWorldType().getOrElse(WorldType.NORMAL))
                     .doFolderCheck(options.keepFiles().isEmpty());
 
-            return deleteWorld(DeleteWorldOptions.world(world).keepFiles(options.keepFiles()))
+            return deleteWorld(DeleteWorldOptions.world(world).keepFiles(options.keepFiles())).join()
                     .transform(RegenFailureReason.DELETE_FAILED)
-                    .mapAttempt(() -> createWorld(createWorldOptions).transform(RegenFailureReason.CREATE_FAILED))
+                    .mapAttempt(() -> createWorld(createWorldOptions).join().transform(RegenFailureReason.CREATE_FAILED))
                     .onSuccess(newWorld -> {
                         dataTransfer.pasteAllTo(newWorld);
                         if (shouldKeepSpawnLocation) {

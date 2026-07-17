@@ -15,7 +15,7 @@ class SpawnCommandTest : AbstractCommandTest() {
         server.addPlayer("Player1")
         server.addPlayer("Player2")
         server.addPlayer("Player3")
-        assertTrue(worldManager.createWorld(CreateWorldOptions.worldName("otherworld")).isSuccess)
+        assertTrue(worldManager.createWorld(CreateWorldOptions.worldName("otherworld")).join().isSuccess)
         server.getWorld("otherworld")?.spawnLocation?.let { Bukkit.getPlayer("Player1")?.teleport(it) }
         worldManager.getLoadedWorld("world").get().setSpawnLocation(SpawnLocation(20.0, 20.0, 20.0))
         worldManager.getLoadedWorld("otherworld").get().setSpawnLocation(SpawnLocation(20.0, 20.0, 20.0))

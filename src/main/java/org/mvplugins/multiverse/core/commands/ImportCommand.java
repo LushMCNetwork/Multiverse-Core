@@ -71,14 +71,15 @@ class ImportCommand extends CoreCommand {
                         .generatorSettings(parsedFlags.flagValue(flags.generatorSettings, ""))
                         .useSpawnAdjust(!parsedFlags.hasFlag(flags.noAdjustSpawn))
                         .doFolderCheck(!parsedFlags.hasFlag(flags.skipFolderCheck)))
-                .onSuccess(newWorld -> {
-                    Logging.fine("World import success: " + newWorld);
-                    issuer.sendInfo(MVCorei18n.IMPORT_SUCCESS, Replace.WORLD.with(newWorld.getName()));
-                })
-                .onFailure(failure -> {
-                    Logging.fine("World import failure: " + failure);
-                    issuer.sendError(failure.getFailureMessage());
-                });
+                .thenAccept(attempt -> attempt
+                        .onSuccess(newWorld -> {
+                            Logging.fine("World import success: " + newWorld);
+                            issuer.sendInfo(MVCorei18n.IMPORT_SUCCESS, Replace.WORLD.with(newWorld.getName()));
+                        })
+                        .onFailure(failure -> {
+                            Logging.fine("World import failure: " + failure);
+                            issuer.sendError(failure.getFailureMessage());
+                        }));
     }
 
     @Service
