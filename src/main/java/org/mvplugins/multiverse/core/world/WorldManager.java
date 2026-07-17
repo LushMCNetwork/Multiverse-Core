@@ -301,13 +301,15 @@ public final class WorldManager {
                 .mapAttempt(creator -> addGeneratorToCreator(creator, generatorString))
                 .mapAttempt(this::createBukkitWorld)
                 .transform(CreateFailureReason.WORLD_CREATOR_FAILED)
+                // verifySpawnSafety=false: a freshly created world has no owning Folia region until a player
+                // visits it, so there's nothing to dispatch the block-safety check to yet.
                 .map(bukkitWorld -> newLoadedMultiverseWorld(
                         bukkitWorld,
                         generatorString,
                         options.biome(),
                         options.generatorSettings(),
                         options.useSpawnAdjust(),
-                        true))
+                        false))
                 .peek(loadedWorld -> postCreateWorld(loadedWorld, options));
     }
 
@@ -379,13 +381,14 @@ public final class WorldManager {
                 .mapAttempt(creator -> addGeneratorToCreator(creator, generatorString))
                 .mapAttempt(this::createBukkitWorld)
                 .transform(ImportFailureReason.WORLD_CREATOR_FAILED)
+                // verifySpawnSafety=false: same reasoning as doCreateWorld - the world's region doesn't exist yet.
                 .map(bukkitWorld -> newLoadedMultiverseWorld(
                         bukkitWorld,
                         generatorString,
                         options.biome(),
                         options.generatorSettings(),
                         options.useSpawnAdjust(),
-                        true))
+                        false))
                 .peek(loadedWorld -> pluginManager.callEvent(new MVWorldImportedEvent(loadedWorld)));
     }
 
@@ -590,13 +593,16 @@ public final class WorldManager {
                     replace("{mvNamespace}").with(mvWorld.getKey()));
         }
 
+        // verifySpawnSafety=false: this world was either just created via WorldCreator (no owning region yet)
+        // or was already loaded by Bukkit/another plugin before us (same reasoning as doImportBukkitWorld).
         LoadedMultiverseWorld loadedWorld = new LoadedMultiverseWorld(
                 bukkitWorld,
                 worldConfig,
                 config,
                 blockSafety,
                 locationManipulation,
-                entityPurger
+                entityPurger,
+                false
         );
         worldStore.putLoadedWorld(loadedWorld);
         saveWorldsConfig();

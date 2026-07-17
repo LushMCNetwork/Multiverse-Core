@@ -31,17 +31,6 @@ public final class LoadedMultiverseWorld extends MultiverseWorld {
     private final LocationManipulation locationManipulation;
     private final EntityPurger entityPurger;
 
-    LoadedMultiverseWorld(
-            @NotNull World world,
-            @NotNull WorldConfig worldConfig,
-            @NotNull CoreConfig config,
-            @NotNull BlockSafety blockSafety,
-            @NotNull LocationManipulation locationManipulation,
-            @NotNull EntityPurger entityPurger
-    ) {
-        this(world, worldConfig, config, blockSafety, locationManipulation, entityPurger, true);
-    }
-
     /**
      * @param verifySpawnSafety Whether to verify/adjust the spawn location against block safety. Must be false
      *                          when constructed for a world that has no owning Folia region yet (e.g. importing
