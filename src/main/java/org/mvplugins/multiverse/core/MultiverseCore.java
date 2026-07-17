@@ -87,6 +87,11 @@ public class MultiverseCore extends MultiverseModule {
         super.onEnable();
         initializeDependencyInjection(new MultiverseCorePluginBinder(this));
 
+        // Register the API service as early as possible. World init below is deferred asynchronously (required
+        // on Folia), but other plugins enabling right after us (their onEnable runs before that deferred work
+        // completes) may call MultiverseCoreApi.get() eagerly instead of using MultiverseCoreApi.whenLoaded(...).
+        loadApiService();
+
         // Load our configs first as we need them for everything else.
         var config = configProvider.get();
         var loadSuccess = config.load().andThenTry(config::save).isSuccess();
@@ -114,7 +119,6 @@ public class MultiverseCore extends MultiverseModule {
                 registerDestinations();
                 setupMetrics();
                 loadPlaceholderApiIntegration();
-                loadApiService();
                 saveAllConfigs();
                 logEnableMessage();
             }).onFailure(e -> {
