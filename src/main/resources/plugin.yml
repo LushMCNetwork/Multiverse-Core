@@ -1,6 +1,6 @@
 name: Multiverse-Core
 main: org.mvplugins.multiverse.core.MultiverseCore
-authors: ['dumptruckman', 'Rigby', 'fernferret', 'lithium3141', 'main--', 'benwoo1110', 'Zax71']
+authors: ['dumptruckman', 'Rigby', 'fernferret', 'lithium3141', 'main--', 'benwoo1110', 'Zax71', 'mechobliterate']
 website: 'https://modrinth.com/plugin/multiverse-core'
 description: 'The original Bukkit Multi-World Plugin!'
 softdepend: ['Vault', 'PlaceholderAPI']
